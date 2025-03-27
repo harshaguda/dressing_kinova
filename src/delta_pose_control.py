@@ -60,6 +60,7 @@ class DeltaPoseControl:
             self.activate_publishing_of_action_notification = rospy.ServiceProxy(activate_publishing_of_action_notification_full_name, OnNotificationActionTopic)
 
             self.req_handle = 1001
+            self._init_controller()
         except:
             self.is_init_success = False
         else:
@@ -182,7 +183,31 @@ class DeltaPoseControl:
         else:
             rospy.loginfo("Waiting for pose 1 to finish...")
         self.wait_for_action_end_or_abort()
-        
+
+    def _init_controller(self):
+        #*******************************************************************************
+        # Make sure to clear the robot's faults else it won't move if it's already in fault
+        # print("clear faults", self.clear_faults())
+        self.example_clear_faults()
+        #*******************************************************************************
+
+        #*******************************************************************************
+        # Start the example from the Home position
+        self.home_the_robot()
+        #*******************************************************************************
+
+        #*******************************************************************************
+        # Set the reference frame to "Mixed"
+        self.ex_set_cartesian_reference_frame()
+
+        #*******************************************************************************
+        # Subscribe to ActionNotification's from the robot to know when a cartesian pose is finished
+        self.subscribe_to_a_robot_notification()
+
+        #*******************************************************************************
+
+        self._init_linear_pose()    
+    
     def set_cartesian_pose(self, x, y, z):
         # cartesian speed
         # Prepare and send pose 2
