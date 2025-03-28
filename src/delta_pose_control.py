@@ -160,11 +160,11 @@ class DeltaPoseControl:
         self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 
         self.my_constrained_pose.target_pose.x = 0.374
-        self.my_constrained_pose.target_pose.y = 0.081
-        self.my_constrained_pose.target_pose.z = 0.450
-        self.my_constrained_pose.target_pose.theta_x = -57.6
-        self.my_constrained_pose.target_pose.theta_y = 91.1
-        self.my_constrained_pose.target_pose.theta_z = 2.3
+        self.my_constrained_pose.target_pose.y = 0.411
+        self.my_constrained_pose.target_pose.z = 0.30
+        self.my_constrained_pose.target_pose.theta_x = 0
+        self.my_constrained_pose.target_pose.theta_y = 180
+        self.my_constrained_pose.target_pose.theta_z = 0
 
         self.req = ExecuteActionRequest()
         self.req.input.oneof_action_parameters.reach_pose.append(self.my_constrained_pose)
@@ -193,7 +193,7 @@ class DeltaPoseControl:
 
         #*******************************************************************************
         # Start the example from the Home position
-        self.home_the_robot()
+        # self.home_the_robot()
         #*******************************************************************************
 
         #*******************************************************************************
@@ -250,7 +250,7 @@ class DeltaPoseControl:
             
             #*******************************************************************************
             # Start the example from the Home position
-            success &= self.home_the_robot()
+            # success &= self.home_the_robot()
             #*******************************************************************************
 
             #*******************************************************************************
