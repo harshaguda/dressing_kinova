@@ -160,8 +160,8 @@ class DeltaPoseControl:
         self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 
         self.my_constrained_pose.target_pose.x = 0.374
-        self.my_constrained_pose.target_pose.y = 0.411
-        self.my_constrained_pose.target_pose.z = 0.30
+        self.my_constrained_pose.target_pose.y = 0.311
+        self.my_constrained_pose.target_pose.z = 0.305
         self.my_constrained_pose.target_pose.theta_x = 0
         self.my_constrained_pose.target_pose.theta_y = 180
         self.my_constrained_pose.target_pose.theta_z = 0
@@ -264,9 +264,9 @@ class DeltaPoseControl:
             #*******************************************************************************
             
             self._init_linear_pose()
-            self.set_cartesian_pose(0.1, 0, 0)
-            self.set_cartesian_pose(0, 0.1, 0) 
-            self.set_cartesian_pose(0, 0, -0.1)
+            # self.set_cartesian_pose(0.1, 0, 0)
+            # self.set_cartesian_pose(0, 0.1, 0) 
+            # self.set_cartesian_pose(0, 0, 0.1)
 
             success &= self.all_notifs_succeeded
 
