@@ -16,11 +16,14 @@ import rospy
 import time
 from kortex_driver.srv import *
 from kortex_driver.msg import *
+import tf
 
 class DeltaPoseControl:
     def __init__(self):
         try:
             rospy.init_node('example_cartesian_poses_with_notifications_python')
+
+            self.tf_listener = tf.TransformListener()
 
             self.HOME_ACTION_IDENTIFIER = 2
 
@@ -91,6 +94,18 @@ class DeltaPoseControl:
             rospy.loginfo("Cleared the faults successfully")
             rospy.sleep(2.5)
             return True
+
+    def get_ee_pose(self):
+        # Get the end effector pose
+        try:
+            trans, rot = self.tf_listener.lookupTransform('/base_link', '/end_effector_link', rospy.Time(0))
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            rospy.logerr("Failed to get the end effector pose")
+            return False
+        else:
+            return trans, rot
+        
+        rospy.sleep(0.25)
 
     def home_the_robot(self):
         # The Home Action is used to home the robot. It cannot be deleted and is always ID #2:
