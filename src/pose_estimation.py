@@ -1,3 +1,4 @@
+from calendar import c
 import enum
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -10,6 +11,8 @@ import pyrealsense2 as rs
 import cv2
 import time
 import math
+
+from clothsuite.poseestimation.origin_aruco import detect_aruco_markers, ARUCO_DICT
 
 class MediaPipe3DPose:
     def __init__(self, debug=False):
@@ -43,6 +46,7 @@ class MediaPipe3DPose:
         self.pipeline.start(config)
 
         self.previous_valid_pose = [[0,0,0], [0,0,0], [0,0,0]]
+        self.get_realsense_intrinsics()
 
     def draw_landmarks_on_image(self, rgb_image, detection_result):
         pose_landmarks_list = detection_result.pose_landmarks
@@ -151,7 +155,7 @@ class MediaPipe3DPose:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             # mp_drawing.draw_landmarks(
             #     image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
+            cv2.imshow("Original Image Feed", image)
             for i, vert in enumerate(shoulder_verts):
                 x_px, y_px = vert
                 # Draw a circle at the landmark position
@@ -171,9 +175,165 @@ class MediaPipe3DPose:
                 exit()
         return shoulder_3d
     
+    def detect_aruco_markers(
+            self,
+            frame, 
+            aruco_dict_type,
+            depth_frame=None,
+            color_frame=None,
+            depth_colormap=None,
+            ):
+        """
+        Detect ArUco markers in the image
+        
+        Args:
+            frame: Input image frame
+            aruco_dict_type: Type of ArUco dictionary
+            matrix_coefficients: Camera matrix (optional, for pose estimation)
+            distortion_coefficients: Distortion coefficients (optional, for pose estimation)
+            
+        Returns:
+            frame: Output image with detected markers
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Get ArUco dictionary
+        aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT[aruco_dict_type])
+        parameters = cv2.aruco.DetectorParameters()
+        
+        # Detect ArUco markers
+        detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+        corners, ids, rejected = detector.detectMarkers(gray)
+        rvec, tvec, vert = None, None, None
+        # Draw detected markers if any
+        if ids is not None and len(ids) > 0:
+            # rvec, tvec, _ = cv2.aruco.(corners, 0.05, matrix_coefficients, distortion_coefficients)
+            x_px, y_px = int(corners[0].mean(axis=1)[0, 0]), int(corners[0].mean(axis=1)[0, 1])
+            vert = self.get_3d_point_from_pixel(0, depth_frame, color_frame, x_px, y_px)
+            # If camera calibration is provided, estimate pose
+            if self.matrix_coefficients is not None and self.distortion_coefficients is not None:
+                # Define marker size (in meters)
+                marker_size = 0.05
+                
+                # For each detected marker
+                for i in range(len(ids)):
+                    # Define marker corners in 3D space (marker coordinate system)
+                    objPoints = np.array([
+                        [-marker_size/2, marker_size/2, 0],
+                        [marker_size/2, marker_size/2, 0],
+                        [marker_size/2, -marker_size/2, 0],
+                        [-marker_size/2, -marker_size/2, 0]
+                    ], dtype=np.float32)
+                    
+                    # Get 2D corners from detected marker
+                    imgPoints = corners[i][0].astype(np.float32)
+                    
+                    # Solve for pose
+                    success, rvec, tvec = cv2.solvePnP(
+                        objPoints, imgPoints, self.matrix_coefficients, self.distortion_coefficients
+                    )
+                    
+                    if success and self.debug:
+                        # Draw axis for the marker
+                        cv2.drawFrameAxes(frame, self.matrix_coefficients, self.distortion_coefficients, 
+                                        rvec, tvec, 0.03)
+                        
+                        # Display position information
+                        marker_position = f"ID:{ids[i][0]} x:{tvec[0][0]:.2f} y:{tvec[1][0]:.2f} z:{tvec[2][0]:.2f}"
+                        cv2.putText(frame, marker_position, 
+                                (int(corners[i][0][0][0]), int(corners[i][0][0][1]) - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        # Print rotation vector for debugging
+                        print(f"Marker {ids[i][0]} rotation vector: {rvec} translation vector: {tvec}")
+                        frame = cv2.circle(frame, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
+                        
+                        cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+        
+        return frame, rvec, vert
+    
+    def get_translation_matrix(self, rvec, tvec):
+        """
+        Get the rotation and translation vectors.
+        
+        Args:
+            rvec: Rotation vector
+            tvec: Translation vector
+        """
+
+        R, _ = cv2.Rodrigues(rvec)
+        tvec4 = np.array([tvec[0], tvec[1], tvec[2]])
+        Trans = np.zeros((4, 4), dtype=np.float32)
+        Trans[0:3, 0:3] = R.T
+        Trans[:-1,3] = R.T @ (-tvec4)
+        Trans[3, 3] = 1
+        return Trans
+
+    # def translation_matrix(self):
+
+
+    def get_realsense_intrinsics(self):
+        
+        # Get the first frame
+        frames = self.pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+        
+        # Extract intrinsics from the color stream
+        intrinsics = color_frame.profile.as_video_stream_profile().intrinsics
+        
+        # Create camera matrix
+        self.matrix_coefficients = np.array([
+            [intrinsics.fx, 0, intrinsics.ppx],
+            [0, intrinsics.fy, intrinsics.ppy],
+            [0, 0, 1]
+        ])
+        
+        # Get distortion coefficients
+        self.distortion_coefficients = np.array(intrinsics.coeffs)
+
+    def t_camera_to_aruco(self, Trans, point):
+        """
+        Transform a point from camera coordinates to ArUco marker coordinates.
+        
+        Args:
+        point: 3D point in camera coordinates
+        Trans: Transformation matrix from camera to ArUco marker
+        
+        Returns:
+        point: Transformed 3D point in ArUco marker coordinates
+        """
+
+        point = np.array([point[0], point[1], point[2], 1])
+        point = Trans @ point
+        point = point[:3] / point[3]
+        return point
+
+
 if __name__ == "__main__":
     poses = MediaPipe3DPose(debug=True)
-    
+    frames = poses.pipeline.wait_for_frames()
+    color_frame = frames.get_color_frame()
+    depth_frame = frames.get_depth_frame()
+    frame = np.asanyarray(color_frame.get_data())
+    depth_colormap = np.asanyarray(poses.colorizer.colorize(depth_frame).get_data())
+    rvec, vert = None, None
+    while (rvec is None) and (vert is None):
+        output, rvec, vert = poses.detect_aruco_markers(frame, 
+                                                "DICT_5X5_50",  # replace with an args
+                                                depth_frame=depth_frame, 
+                                                color_frame=color_frame,
+                                                depth_colormap=depth_colormap)
+        print(rvec, vert)
+        cv2.imshow("Original Image Feed", output)
+        cv2.waitKey(1)
+    Trans = poses.get_translation_matrix(rvec, vert)
+    print(Trans)
+    # exit()
     while True:
+        
         points = poses.get_arm_points()
+        for i, point in enumerate(points):
+            if point is not None:
+                point = poses.t_camera_to_aruco(Trans, point)
+                points[i] = point
         print(points)
