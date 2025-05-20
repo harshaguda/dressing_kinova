@@ -17,6 +17,7 @@ import time
 from kortex_driver.srv import *
 from kortex_driver.msg import *
 import tf
+import numpy as np
 
 class DeltaPoseControl:
     def __init__(self):
@@ -103,7 +104,7 @@ class DeltaPoseControl:
             rospy.logerr("Failed to get the end effector pose")
             return False
         else:
-            return trans, rot
+            return np.array(trans), rot
         
         rospy.sleep(0.25)
 
