@@ -19,20 +19,21 @@ def process_image(frame):
 
 dpc = DeltaPoseControl()
 poses = MediaPipe3DPose(debug=True)
-dummy_env = DummyEnv()
+dummy_env = DummyEnv(obs="pos")
 ### Add code to use policy model
 
 model = PPO.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/models/best_model.zip", env=dummy_env, 
-         custom_objects={"policy_kwargs":
-                         dict(
-                             features_extractor_class=CustomCombinedExtractor,
-                             normalize_images=False,
-                             activation_fn=torch.nn.modules.activation.Tanh
-                         )}
+         # custom_objects={"policy_kwargs":
+         #                 dict(
+         #                     features_extractor_class=CustomCombinedExtractor,
+         #                     normalize_images=False,
+         #                     activation_fn=torch.nn.modules.activation.Tanh
+         #                 )}
          )
 action_factor = 0.025
 
-obs = np.stack([dpc.get_ee_pose(), poses.get_arm_positions()])
+ee_pos, rot = dpc.get_ee_pose()
+obs = np.stack([ee_pos, poses.get_arm_positions()])
 base_action = torch.zeros(1, 3)
 d = rospy.Duration(0.5)
 for i in range(2048):
