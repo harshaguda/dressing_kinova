@@ -11,6 +11,7 @@ import pyrealsense2 as rs
 import cv2
 import time
 import math
+import numpy as np
 
 from clothsuite.poseestimation.origin_aruco import detect_aruco_markers, ARUCO_DICT
 
@@ -135,9 +136,9 @@ class MediaPipe3DPose:
             # mp_pose.PoseLandmark.LEFT_SHOULDER,
             # mp_pose.PoseLandmark.LEFT_ELBOW,
             # mp_pose.PoseLandmark.LEFT_WRIST,
-            self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
+            self.mp_pose.PoseLandmark.RIGHT_WRIST,
             self.mp_pose.PoseLandmark.RIGHT_ELBOW,
-            self.mp_pose.PoseLandmark.RIGHT_WRIST
+            self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
         ]
         if results.pose_landmarks is not None:
             for landmark in required_landmarks:
@@ -173,7 +174,7 @@ class MediaPipe3DPose:
 
             if cv2.waitKey(1) & 0xFF == 27:
                 exit()
-        return shoulder_3d
+        return np.array(shoulder_3d)
     
     def detect_aruco_markers(
             self,
