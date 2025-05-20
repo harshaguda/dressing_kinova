@@ -33,7 +33,7 @@ model = PPO.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/models/best_m
 action_factor = 0.025
 
 ee_pos, rot = dpc.get_ee_pose()
-obs = np.stack([ee_pos, poses.get_arm_positions()])
+obs = np.vstack([ee_pos, poses.get_arm_positions()])
 base_action = torch.zeros(1, 3)
 d = rospy.Duration(0.5)
 for i in range(2048):
