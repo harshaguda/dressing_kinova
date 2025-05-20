@@ -222,7 +222,7 @@ class DeltaPoseControl:
 
         #*******************************************************************************
 
-        self._init_linear_pose()    
+        self._init_linear_pose()  
     
     def set_cartesian_pose(self, x, y, z):
         # cartesian speed

@@ -13,11 +13,36 @@ import time
 import math
 import numpy as np
 
-from clothsuite.poseestimation.origin_aruco import detect_aruco_markers, ARUCO_DICT
+# Define available ArUco dictionaries
+ARUCO_DICT = {
+    "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
+    "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
+    "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
+    "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
+    "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
+    "DICT_5X5_100": cv2.aruco.DICT_5X5_100,
+    "DICT_5X5_250": cv2.aruco.DICT_5X5_250,
+    "DICT_5X5_1000": cv2.aruco.DICT_5X5_1000,
+    "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
+    "DICT_6X6_100": cv2.aruco.DICT_6X6_100,
+    "DICT_6X6_250": cv2.aruco.DICT_6X6_250,
+    "DICT_6X6_1000": cv2.aruco.DICT_6X6_1000,
+    "DICT_7X7_50": cv2.aruco.DICT_7X7_50,
+    "DICT_7X7_100": cv2.aruco.DICT_7X7_100,
+    "DICT_7X7_250": cv2.aruco.DICT_7X7_250,
+    "DICT_7X7_1000": cv2.aruco.DICT_7X7_1000,
+    "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
+    "DICT_APRILTAG_16h5": cv2.aruco.DICT_APRILTAG_16h5,
+    "DICT_APRILTAG_25h9": cv2.aruco.DICT_APRILTAG_25h9,
+    "DICT_APRILTAG_36h10": cv2.aruco.DICT_APRILTAG_36h10,
+    "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
+}
+
 
 class MediaPipe3DPose:
-    def __init__(self, debug=False):
+    def __init__(self, debug=False, translate=False):
         self.debug = debug
+        self.translate = translate
         self.no_smooth_landmarks = False
         self.static_image_mode = True
         self.model_complexity = 1
@@ -48,7 +73,28 @@ class MediaPipe3DPose:
 
         self.previous_valid_pose = [[0,0,0], [0,0,0], [0,0,0]]
         self.get_realsense_intrinsics()
-
+        self.translation_matrix = None
+        
+        self._init_translation_matrix()
+        
+    def _init_translation_matrix(self):
+        frames = self.pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+        depth_frame = frames.get_depth_frame()
+        frame = np.asanyarray(color_frame.get_data())
+        depth_colormap = np.asanyarray(self.colorizer.colorize(depth_frame).get_data())
+        rvec, vert = None, None
+        while (rvec is None) and (vert is None):
+            output, rvec, vert = self.detect_aruco_markers(frame, 
+                                                    "DICT_5X5_50",  # replace with an args
+                                                    depth_frame=depth_frame, 
+                                                    color_frame=color_frame,
+                                                    depth_colormap=depth_colormap)
+            print(rvec, vert)
+            # cv2.imshow("Original Image Feed", output)
+            # cv2.waitKey(1)
+        self.translation_matrix = self.get_translation_matrix(rvec, vert)
+    
     def draw_landmarks_on_image(self, rgb_image, detection_result):
         pose_landmarks_list = detection_result.pose_landmarks
         annotated_image = np.copy(rgb_image)
@@ -71,7 +117,7 @@ class MediaPipe3DPose:
 
 
 
-    def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, x, y):
+    def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, x, y, translate=False):
         """
         Convert a 2D pixel coordinate (x,y) to a 3D point using the RealSense camera
         
@@ -99,7 +145,8 @@ class MediaPipe3DPose:
         # Convert pixel to 3D point in camera coordinate system
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
         point_3d = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [x, y], depth_value)
-        
+        if translate:
+            point_3d = self.t_camera_to_aruco(self.translation_matrix, point_3d)
         self.previous_valid_pose[idx] = point_3d
         return point_3d
 
@@ -174,6 +221,8 @@ class MediaPipe3DPose:
 
             if cv2.waitKey(1) & 0xFF == 27:
                 exit()
+        if len(shoulder_3d) == 0:
+            return np.array(self.previous_valid_pose)
         return np.array(shoulder_3d)
     
     def detect_aruco_markers(
@@ -196,6 +245,7 @@ class MediaPipe3DPose:
         Returns:
             frame: Output image with detected markers
         """
+        print("detecting aruco marker")
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
         # Get ArUco dictionary
@@ -210,7 +260,11 @@ class MediaPipe3DPose:
         if ids is not None and len(ids) > 0:
             # rvec, tvec, _ = cv2.aruco.(corners, 0.05, matrix_coefficients, distortion_coefficients)
             x_px, y_px = int(corners[0].mean(axis=1)[0, 0]), int(corners[0].mean(axis=1)[0, 1])
-            vert = self.get_3d_point_from_pixel(0, depth_frame, color_frame, x_px, y_px)
+            if self.translation_matrix is None:
+                translate = False
+            else:
+                translate = True
+            vert = self.get_3d_point_from_pixel(0, depth_frame, color_frame, x_px, y_px, translate)
             # If camera calibration is provided, estimate pose
             if self.matrix_coefficients is not None and self.distortion_coefficients is not None:
                 # Define marker size (in meters)
@@ -250,7 +304,7 @@ class MediaPipe3DPose:
                         frame = cv2.circle(frame, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
                         
                         cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-        
+        print(rvec, vert)
         return frame, rvec, vert
     
     def get_translation_matrix(self, rvec, tvec):
@@ -270,7 +324,6 @@ class MediaPipe3DPose:
         Trans[3, 3] = 1
         return Trans
 
-    # def translation_matrix(self):
 
 
     def get_realsense_intrinsics(self):
@@ -311,30 +364,8 @@ class MediaPipe3DPose:
 
 
 if __name__ == "__main__":
-    poses = MediaPipe3DPose(debug=True)
-    frames = poses.pipeline.wait_for_frames()
-    color_frame = frames.get_color_frame()
-    depth_frame = frames.get_depth_frame()
-    frame = np.asanyarray(color_frame.get_data())
-    depth_colormap = np.asanyarray(poses.colorizer.colorize(depth_frame).get_data())
-    rvec, vert = None, None
-    while (rvec is None) and (vert is None):
-        output, rvec, vert = poses.detect_aruco_markers(frame, 
-                                                "DICT_5X5_50",  # replace with an args
-                                                depth_frame=depth_frame, 
-                                                color_frame=color_frame,
-                                                depth_colormap=depth_colormap)
-        print(rvec, vert)
-        cv2.imshow("Original Image Feed", output)
-        cv2.waitKey(1)
-    Trans = poses.get_translation_matrix(rvec, vert)
-    print(Trans)
-    # exit()
+    poses = MediaPipe3DPose(debug=True, translate=True)
+    
     while True:
-        
         points = poses.get_arm_points()
-        for i, point in enumerate(points):
-            if point is not None:
-                point = poses.t_camera_to_aruco(Trans, point)
-                points[i] = point
         print(points)

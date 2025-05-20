@@ -8,7 +8,7 @@ from delta_pose_control import DeltaPoseControl
 from utils import CustomCombinedExtractor, DummyEnv
 import numpy as np
 import rospy
-
+import time
 from pose_estimation import MediaPipe3DPose
 
 def process_image(frame):
@@ -18,7 +18,8 @@ def process_image(frame):
     return np.expand_dims(image, axis=0), resized_image
 
 dpc = DeltaPoseControl()
-poses = MediaPipe3DPose(debug=True)
+rospy.sleep(1)
+poses = MediaPipe3DPose(debug=True, translate=True)
 dummy_env = DummyEnv(obs="pos")
 ### Add code to use policy model
 
@@ -33,15 +34,17 @@ model = PPO.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/models/best_m
 action_factor = 0.025
 
 ee_pos, rot = dpc.get_ee_pose()
-obs = np.vstack([ee_pos, poses.get_arm_positions()])
+print(ee_pos.shape, poses.get_arm_points().shape)
+obs = np.vstack([ee_pos, poses.get_arm_points()])
+obs = obs.flatten()
 base_action = torch.zeros(1, 3)
 d = rospy.Duration(0.5)
 for i in range(2048):
 
     action, _ = model.predict(obs)
-    x, y, z = -action[0]*action_factor
-    base_action += torch.tensor([x, y, z]).reshape(1,3)
+    print(action)
+    print(action.shape)
+    x, y, z = action * action_factor
     dpc.set_cartesian_pose(x, y, z)
-    # cv2.imshow('frame', res_img)
     cv2.waitKey(1)
     rospy.sleep(d)

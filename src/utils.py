@@ -70,35 +70,35 @@ class CustomCombinedExtractor(BaseFeaturesExtractor):
 class DummyEnv(gym.Env):
     def __init__(self, obs):
         self.obs = obs
-        if self.obs = "rgb_pos":
+        if self.obs == "rgb_pos":
             self.observation_space = gym.spaces.Dict({
                     "image": gym.spaces.Box(low=0, high=255, shape=(3, 214, 214), dtype=np.uint8),
                     "hvert": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(9,), dtype='float32')
                 })
-        elif self.obs = "pos":
+        elif self.obs == "pos":
             self.observation_space =  gym.spaces.Box(low=-np.inf, high=np.inf, shape=(12,), dtype='float32')
             
         self.action_space = gym.spaces.Box(-1, 1, shape=(3,), dtype=np.float32)
     
     def reset(self, **kwargs):
-        if self.obs = "rgb_pos":
+        if self.obs == "rgb_pos":
             return {
                 "image": np.zeros((3, 214, 214), dtype=np.uint8),
                 "hvert": np.zeros(9, dtype=np.float32)
             }, {}
-        elif self.obs = "pos":
+        elif self.obs == "pos":
             return {np.zeros(12, dtype=np.float32)
         }, {}
     
     def step(self, action):
-        if self.obs = "rgb_pos":
+        if self.obs == "rgb_pos":
             obs = {
                 "image": np.zeros((3, 214, 214), dtype=np.uint8),
                 "hvert": np.zeros(9, dtype=np.float32)
             }
-        elif self.obs = "pos":
+        elif self.obs == "pos":
             obs = np.zeros(12, dtype=np.float32)
         return obs, 0.0, False, False, {}
 
 # Create a new model with the dummy environment
-dummy_env = DummyEnv()
+# dummy_env = DummyEnv()
