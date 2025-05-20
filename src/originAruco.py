@@ -99,7 +99,7 @@ def detect_aruco_markers(
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                     
                     # Print rotation vector for debugging
-                    print(f"Marker {ids[i][0]} rotation vector: {rvec} translation vector: {tvec}")
+                    print(f"Marker {ids[i][0]} rotation vector: {rvec} translation vector: {vert}")
         frame = cv2.circle(frame, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
         
         cv2.aruco.drawDetectedMarkers(frame, corners, ids)
@@ -174,18 +174,25 @@ def save_translation_matrix(rvec, tvec):
     """
 
     R, _ = cv2.Rodrigues(rvec)
-    tvec4 = np.array([tvec[0], tvec[1], tvec[2]])
+    tvec4 = np.array([tvec[0], tvec[1], tvec[2], 1])
+
+    tvec = np.array([tvec[0], tvec[1], tvec[2]])
     Trans = np.zeros((4, 4), dtype=np.float32)
     Trans[0:3, 0:3] = R.T
-    Trans[:-1,3] = R.T @ (-tvec4)
+    Trans[:-1,3] = R.T @ (-tvec)
     Trans[3, 3] = 1
-    np.savetxt("translation_matrix.txt", Trans, delimiter=",")
+    
+    # np.savetxt("translation_matrix.txt", Trans, delimiter=",")
+    np.save("translation_matrix", Trans)
+    
+    print(Trans @ tvec4.T, Trans, tvec4)
+    
     return Trans
 
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="ArUco Marker Detection")
-    parser.add_argument("--dict", type=str, default="DICT_6X6_250", 
+    parser.add_argument("--dict", type=str, default="DICT_5X5_50", 
                        choices=ARUCO_DICT.keys(), help="ArUco dictionary to use")
     parser.add_argument("--camera", type=int, default=0, help="Camera index")
     parser.add_argument("--use_realsense", action="store_true", help="Use Intel RealSense camera")

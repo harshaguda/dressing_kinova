@@ -175,8 +175,8 @@ class DeltaPoseControl:
         self.my_constrained_pose = ConstrainedPose()
         self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 
-        self.my_constrained_pose.target_pose.x = 0.374
-        self.my_constrained_pose.target_pose.y = 0.311
+        self.my_constrained_pose.target_pose.x = 0.3
+        self.my_constrained_pose.target_pose.y = 0.0
         self.my_constrained_pose.target_pose.z = 0.305
         self.my_constrained_pose.target_pose.theta_x = 0
         self.my_constrained_pose.target_pose.theta_y = 180
