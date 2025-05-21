@@ -195,10 +195,10 @@ def main():
     parser.add_argument("--dict", type=str, default="DICT_5X5_50", 
                        choices=ARUCO_DICT.keys(), help="ArUco dictionary to use")
     parser.add_argument("--camera", type=int, default=0, help="Camera index")
-    parser.add_argument("--use_realsense", action="store_true", help="Use Intel RealSense camera")
+    # parser.add_argument("--use_realsense", action="store_true", help="Use Intel RealSense camera")
     parser.add_argument("--calibration", type=str, default=None, help="Camera calibration file (optional)")
     args = parser.parse_args()
-    
+    args.use_realsense = True
     # Load camera calibration if provided
     matrix_coefficients = None
     distortion_coefficients = None

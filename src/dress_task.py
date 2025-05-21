@@ -31,30 +31,45 @@ model = PPO.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/models/best_m
          #                     activation_fn=torch.nn.modules.activation.Tanh
          #                 )}
          )
-action_factor = 0.005
-
+action_factor = 0.025
 
 base_action = torch.zeros(1, 3)
 d = rospy.Duration(0.5)
 ee_pos_aligned = np.zeros(3)
+def simple_delta_controller(a, b):
+    action = a - b
+    return action
+    
 for i in range(2048):
     ee_pos, rot = dpc.get_ee_pose()
     ## ee_pos is y, x, z of the chosen axis.
-    print(ee_pos.shape, ee_pos)
-    ee_pos_aligned[1], ee_pos_aligned[0], ee_pos_aligned[2] = ee_pos[0], ee_pos[1], ee_pos[2]
-    arms_pos = np.array([[0.10959604, 0.18741445,  1.00900006],
-                         [0.32794195, 0.22820899,  1.37300003],
-                         [0.39954785, 0.30343255,  1.49000013]])
-    obs = np.vstack([ee_pos_aligned, arms_pos])
-    obs = obs.flatten()
-    action, _ = model.predict(obs, deterministic=True)
+    # print(ee_pos.shape, ee_pos)
+    # ee_pos_aligned[1], ee_pos_aligned[0], ee_pos_aligned[2] = ee_pos[0], ee_pos[1], ee_pos[2]
+    # arm_pos = np.array([[0.10959604, 0.18741445,  1.00900006],
+    #                      [0.32794195, 0.22820899,  1.37300003],
+    #                      [0.39954785, 0.30343255,  1.49000013]])
+    arm_pos, image = poses.get_arm_points()
+    # sth = poses.get_arm_points()
+    # print(sth)
+    # exit()
+    cv2.imwrite(f"/home/userlab/iri_lab/iri_ws/src/dressing_kinova/recordings/{i}.jpg", image)
+    ee_pos[2] -= 0.12
+    # arm_pos = np.array([[0.15594363, 0.24065166, 0.24004575],
+    #                     [0.07339189, 0.48392706, 0.22932413],
+    #                     [0.08465751, 0.6990025,  0.28217799]])
+    print(ee_pos)
+    # action = simple_delta_controller(arm_pos[2], ee_pos)
+    # obs = np.vstack([np.array(ee_pos), arm_pos])
+    # obs = obs.flatten()
+    action, _ = model.predict(obs)
     print(action)
-    print(action.shape)
+    # print(action.shape)
     x, y, z = action * action_factor
     dpc.set_cartesian_pose(x, y, z)
     cv2.waitKey(1)
+    
     # k = cv2.waitKey(1)
     # if k==27:    # Esc key to stop
     #     exit()
-        
+    rospy.on_shutdown(dpc.shutdown_node)
     rospy.sleep(d)

@@ -77,7 +77,7 @@ class MediaPipe3DPose:
         self.translation_matrix = None
         
         # self._init_translation_matrix()
-        self.translation_matrix  = np.load("translation_matrix.npy")
+        self.translation_matrix  = np.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/src/translation_matrix.npy")
         # self.translation_matrix = np.array([[8.957507014274597168e-01,-1.949338763952255249e-01,3.995389938354492188e-01,-9.345052391290664673e-02],
         #                            [-4.422885775566101074e-01,-3.001050353050231934e-01,8.451732397079467773e-01,-7.846307754516601562e-01],
         #                            [-4.484923928976058960e-02,-9.337760806083679199e-01,-3.550363183021545410e-01,6.802514195442199707e-01],
@@ -98,7 +98,6 @@ class MediaPipe3DPose:
                                                     depth_frame=depth_frame, 
                                                     color_frame=color_frame,
                                                     depth_colormap=depth_colormap)
-            print(rvec, vert)
             if (rvec is None) or (np.sum(vert) == 0):
                 flag = True
             else:
@@ -157,9 +156,6 @@ class MediaPipe3DPose:
         # Convert pixel to 3D point in camera coordinate system
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
         point_3d = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [x, y], depth_value)
-        if idx == 0:
-            print("Un aligned wrist position: ", point_3d)
-        print()
         if translate:
             point_3d = self.t_camera_to_aruco(point_3d)
         self.previous_valid_pose[idx] = point_3d
@@ -177,7 +173,7 @@ class MediaPipe3DPose:
         frames = align.process(frames)
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
-        if not depth_frame: return None
+        if not depth_frame: return None, None
 
         # image = np.array(color_frame.get_data())
         image = np.asanyarray(color_frame.get_data())
@@ -222,7 +218,6 @@ class MediaPipe3DPose:
             image = cv2.circle(image, center=(320, 240), radius=5, color=(255, 0, 0), thickness=-1)
             if self.aruco_x is not None:
                 image = cv2.circle(image, center=(self.aruco_x, self.aruco_y), radius=5, color=(255, 0, 0), thickness=-1)
-                print("ArUco vert: ", self.aruco_vert)
             for i, vert in enumerate(shoulder_verts):
                 x_px, y_px = vert
                 # Draw a circle at the landmark position
@@ -241,9 +236,8 @@ class MediaPipe3DPose:
             if cv2.waitKey(1) & 0xFF == 27:
                 exit()
         if len(shoulder_3d) == 0:
-            return np.array(self.previous_valid_pose)
-        print(shoulder_3d)
-        return np.array(shoulder_3d)
+            return np.array(self.previous_valid_pose), image
+        return np.array(shoulder_3d), image
     
     def detect_aruco_markers(
             self,
@@ -277,7 +271,6 @@ class MediaPipe3DPose:
         corners, ids, rejected = detector.detectMarkers(gray)
         rvec, tvec, vert = None, None, None
         # Draw detected markers if any
-        print(ids)
         if ids is not None and len(ids) > 0:
             # rvec, tvec, _ = cv2.aruco.(corners, 0.05, matrix_coefficients, distortion_coefficients)
             x_px, y_px = int(corners[0].mean(axis=1)[0, 0]), int(corners[0].mean(axis=1)[0, 1])
@@ -288,7 +281,6 @@ class MediaPipe3DPose:
                 translate = True
             vert = self.get_3d_point_from_pixel(0, depth_frame, color_frame, x_px, y_px, translate)
             self.aruco_vert = vert
-            print(vert)
             # exit()
             # If camera calibration is provided, estimate pose
             if self.matrix_coefficients is not None and self.distortion_coefficients is not None:
@@ -385,9 +377,8 @@ class MediaPipe3DPose:
 
         point = np.array([point[0], point[1], point[2], 1])
         point = self.translation_matrix @ point
-        print(self.translation_matrix)
         # point = point[:3] / point[3]
-        return point
+        return point[:-1]
 
 
 if __name__ == "__main__":
@@ -395,4 +386,4 @@ if __name__ == "__main__":
     
     while True:
         points = poses.get_arm_points()
-        print("Wrist position: ", points[0])
+        print(points)

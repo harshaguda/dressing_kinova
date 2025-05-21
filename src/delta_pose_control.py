@@ -176,7 +176,7 @@ class DeltaPoseControl:
         self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 
         self.my_constrained_pose.target_pose.x = 0.3
-        self.my_constrained_pose.target_pose.y = 0.0
+        self.my_constrained_pose.target_pose.y = -0.1
         self.my_constrained_pose.target_pose.z = 0.305
         self.my_constrained_pose.target_pose.theta_x = 0
         self.my_constrained_pose.target_pose.theta_y = 180
@@ -247,7 +247,11 @@ class DeltaPoseControl:
             rospy.loginfo(f"Waiting for pose {self.req_handle} to finish...")
 
         self.wait_for_action_end_or_abort()
-
+    
+    def shutdown_node(self):
+        print("shutdown")
+        exit()
+        
     def main(self):
         # For testing purposes
         success = self.is_init_success
