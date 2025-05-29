@@ -25,21 +25,26 @@ class ControllerDressing:
         return action, err
     
     def meta_action(self, arm_pos, ee_pos):
-        wrist_3d = arm_pos[2]
-        wrist_ee_l = np.linalg.norm(wrist_3d)
-        if (wrist_ee_l < 0.3) and (not self.dress_wrist):
-            self.dress_wrist = True
-        else:
-            self.dress_wrist = False
-            action, err = self.get_actions()
-        
-        if self.dress_wrist and not self.dressing_wrist_finished:
-            action, err = self.get_actions(arm_pos[2], ee_pos, dress=True)
-            if err < 0.05:
-                self.dressing_wrist_finished = True
+        wrist_3d = arm_pos[0] 
+        wrist_ee_l = np.linalg.norm((wrist_3d - ee_pos))
+        print("wrist_len ", wrist_ee_l)
+        if wrist_ee_l > 0:
+            if (wrist_ee_l < 0.3) and (not self.dress_wrist):
+                self.dress_wrist = True
+            else:
+                self.dress_wrist = False
+                action, err = self.get_actions()
             
+            if self.dress_wrist and not self.dressing_wrist_finished:
+                action, err = self.get_actions(arm_pos[0], ee_pos, dress=True)
+                if err < 0.05:
+                    self.dressing_wrist_finished = True
+                
 
-        if self.dressing_wrist_finished and self.dress_wrist:
-            action, err = self.get_actions(arm_pos[0], ee_pos, dress=True)
+            if self.dressing_wrist_finished and self.dress_wrist:
+                action, err = self.get_actions(arm_pos[2], ee_pos, dress=True)
+        else:
+            action = np.zeros(3)
+            err = 100
         
         return action, err

@@ -10,6 +10,7 @@ import numpy as np
 import rospy
 import time
 from pose_estimation import MediaPipe3DPose
+from controller import ControllerDressing
 
 def process_image(frame):
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
@@ -21,6 +22,7 @@ dpc = DeltaPoseControl()
 rospy.sleep(5)
 poses = MediaPipe3DPose(debug=True, translate=True)
 dummy_env = DummyEnv(obs="pos")
+controller = ControllerDressing()
 ### Add code to use policy model
 
 model = PPO.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/models/best_model.zip", env=dummy_env, 
@@ -38,7 +40,7 @@ d = rospy.Duration(0.5)
 ee_pos_aligned = np.zeros(3)
 def simple_delta_controller(a, b):
     action = a - b
-    return action
+    return action / np.linalg.norm(action)
     
 for i in range(2048):
     ee_pos, rot = dpc.get_ee_pose()
@@ -54,15 +56,16 @@ for i in range(2048):
     # exit()
     cv2.imwrite(f"/home/userlab/iri_lab/iri_ws/src/dressing_kinova/recordings/{i}.jpg", image)
     ee_pos[2] -= 0.12
-    # arm_pos = np.array([[0.15594363, 0.24065166, 0.24004575],
-    #                     [0.07339189, 0.48392706, 0.22932413],
-    #                     [0.08465751, 0.6990025,  0.28217799]])
-    print(ee_pos)
-    # action = simple_delta_controller(arm_pos[2], ee_pos)
-    # obs = np.vstack([np.array(ee_pos), arm_pos])
-    # obs = obs.flatten()
-    action, _ = model.predict(obs)
-    print(action)
+    
+   
+    # print("ee_pos", ee_pos)
+    # print("arm_pos", arm_pos)
+    arm_pos[0] = arm_pos[0] - [0, 0.4, 0] 
+    action, _ = controller.meta_action(arm_pos, ee_pos)
+    
+    # action = simple_delta_controller(arm_pos[0], ee_pos)
+    # print("action", action)
+    print(ee_pos, arm_pos[0])
     # print(action.shape)
     x, y, z = action * action_factor
     dpc.set_cartesian_pose(x, y, z)

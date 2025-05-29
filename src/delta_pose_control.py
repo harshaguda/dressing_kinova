@@ -229,24 +229,31 @@ class DeltaPoseControl:
         # Prepare and send pose 2
         self.req.input.handle.identifier = 1002
         self.req.input.name = f"{self.req_handle}"
-        self.my_constrained_pose.target_pose.x += x
-        self.my_constrained_pose.target_pose.y += y
-        self.my_constrained_pose.target_pose.z += z
+        flag = False
+        if x != 0:
+            self.my_constrained_pose.target_pose.x += x
+            flag = True
+        if y != 0:
+            self.my_constrained_pose.target_pose.y += y
+            flag = True
+        if z != 0:
+            self.my_constrained_pose.target_pose.z += z
+            flag = True
+        if flag == True:
+            self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
 
-        self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
+            rospy.loginfo(f"Sending pose {self.req_handle}...")
+            self.req_handle += 1
+            self.last_action_notif_type = None
+            try:
+                self.execute_action(self.req)
+            except rospy.ServiceException:
+                rospy.logerr("Failed to send pose 2")
+                success = False
+            else:
+                rospy.loginfo(f"Waiting for pose {self.req_handle} to finish...")
 
-        rospy.loginfo(f"Sending pose {self.req_handle}...")
-        self.req_handle += 1
-        self.last_action_notif_type = None
-        try:
-            self.execute_action(self.req)
-        except rospy.ServiceException:
-            rospy.logerr("Failed to send pose 2")
-            success = False
-        else:
-            rospy.loginfo(f"Waiting for pose {self.req_handle} to finish...")
-
-        self.wait_for_action_end_or_abort()
+            self.wait_for_action_end_or_abort()
     
     def shutdown_node(self):
         print("shutdown")

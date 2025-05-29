@@ -214,7 +214,7 @@ class MediaPipe3DPose:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             # mp_drawing.draw_landmarks(
             #     image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-            cv2.imshow("Original Image Feed", image)
+            # cv2.imshow("Original Image Feed", image)
             image = cv2.circle(image, center=(320, 240), radius=5, color=(255, 0, 0), thickness=-1)
             if self.aruco_x is not None:
                 image = cv2.circle(image, center=(self.aruco_x, self.aruco_y), radius=5, color=(255, 0, 0), thickness=-1)
@@ -231,7 +231,7 @@ class MediaPipe3DPose:
 
             
             cv2.imshow('RealSense Pose Detector', image)
-            cv2.imshow('RealSense Depth', depth_colormap)
+            # cv2.imshow('RealSense Depth', depth_colormap)
 
             if cv2.waitKey(1) & 0xFF == 27:
                 exit()
