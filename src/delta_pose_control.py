@@ -224,7 +224,12 @@ class DeltaPoseControl:
 
         self._init_linear_pose()  
     
-    def set_cartesian_pose(self, x, y, z):
+    def set_cartesian_angle(self, x, y=180, z=0):
+        self.my_constrained_pose.target_pose.theta_x = x
+        self.my_constrained_pose.target_pose.theta_y = y
+        self.my_constrained_pose.target_pose.theta_z = z
+
+    def set_cartesian_pose(self, x, y, z, tx, ty=180, tz=0):
         # cartesian speed
         # Prepare and send pose 2
         self.req.input.handle.identifier = 1002
@@ -239,6 +244,8 @@ class DeltaPoseControl:
         if z != 0:
             self.my_constrained_pose.target_pose.z += z
             flag = True
+        if tx != 0:
+            self.set_cartesian_angle(tx, ty, tz)
         if flag == True:
             self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
 

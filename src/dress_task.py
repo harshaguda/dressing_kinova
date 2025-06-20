@@ -41,7 +41,23 @@ ee_pos_aligned = np.zeros(3)
 def simple_delta_controller(a, b):
     action = a - b
     return action / np.linalg.norm(action)
-    
+
+def angle(elbow, wrist):
+    """
+    Calculate the angle between the line segment from elbow to wrist and the x-axis."""
+    if elbow[0] == wrist[0]:  # Avoid division by zero
+        return 0
+    if elbow[1] == wrist[1]:  # Horizontal line
+        return np.pi / 2
+    if elbow[0] == wrist[0] and elbow[1] == wrist[1]:  # Same point
+        return 0
+    if np.sum(elbow) == 0 or np.sum(wrist) == 0:  # Avoid zero vectors
+        return 0
+
+        
+    m = (wrist[1] - elbow[1]) / (elbow[0] - wrist[0] )
+    return np.arctan(m)
+
 for i in range(2048):
     ee_pos, rot = dpc.get_ee_pose()
     ## ee_pos is y, x, z of the chosen axis.
@@ -62,13 +78,13 @@ for i in range(2048):
     # print("arm_pos", arm_pos)
     arm_pos[0] = arm_pos[0] - [0, 0.4, 0] 
     action, _ = controller.meta_action(arm_pos, ee_pos)
-    
+    tx = angle(arm_pos[1], arm_pos[0])
     # action = simple_delta_controller(arm_pos[0], ee_pos)
     # print("action", action)
     print(ee_pos, arm_pos[0])
     # print(action.shape)
     x, y, z = action * action_factor
-    dpc.set_cartesian_pose(x, y, z)
+    dpc.set_cartesian_pose(x=0, y=0, z=0, tx=tx)
     cv2.waitKey(1)
     
     # k = cv2.waitKey(1)
