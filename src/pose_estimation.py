@@ -50,6 +50,7 @@ class MediaPipe3DPose:
         self.min_tracking_confidence = 0.5
         self.model_path = 'pose_landmarker.task'
 
+        self.mp_drawing = mp.solutions.drawing_utils
 
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
@@ -229,6 +230,9 @@ class MediaPipe3DPose:
                     position_text = f"({shoulder_3d[i][0]:.2f}, {shoulder_3d[i][1]:.2f}, {shoulder_3d[i][2]:.2f})"
                     cv2.putText(image, position_text, (x_px, y_px), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1, cv2.LINE_AA)
 
+            
+            self.mp_drawing.draw_landmarks(
+                    image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
             
             cv2.imshow('RealSense Pose Detector', image)
             # cv2.imshow('RealSense Depth', depth_colormap)

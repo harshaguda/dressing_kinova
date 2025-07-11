@@ -9,7 +9,7 @@ from typing import List
 
 
 class Emotions(object):
-    def __init__(self, device='cpu'):
+    def __init__(self, device='cpu', camid=0):
         self.device = device
         self.fer = None  # Placeholder for the FER model
         self.all_scores = None
@@ -22,9 +22,9 @@ class Emotions(object):
 
         self.all_frames = []
         self.all_scores = None
-        i = 0
+        self.camid = camid
 
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(self.camid)
 
         engage_flag = False
 
@@ -68,12 +68,12 @@ class Emotions(object):
 
     def predict_emotions(self):
         # Placeholder for emotion prediction logic
-        success, frame = self.cap.read()
+        success, image = self.cap.read()
         if not success:
             return None
 
-        # image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = cv2.flip(frame, 0)  # Flip the image horizontally
+        # image = cv2.cvtColor(frame)
+        # image = cv2.flip(frame, 0)  # Flip the image horizontally
         facial_images, bboxes = self.recognize_faces(image, self.device)
         
         if len(facial_images) != 0:
@@ -97,7 +97,7 @@ class Emotions(object):
     
 
 if __name__ == "__main__":
-    emotions = Emotions(device='cuda' if torch.cuda.is_available() else 'cpu')
+    emotions = Emotions(device='cuda' if torch.cuda.is_available() else 'cpu', camid=10)
     while True:
         
         image = emotions.predict_emotions()

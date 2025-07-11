@@ -20,12 +20,12 @@ import tf
 import numpy as np
 
 class DeltaPoseControl:
-    def __init__(self):
+    def __init__(self, home=[0.3, -0.3, 0.405]):
         try:
             rospy.init_node('example_cartesian_poses_with_notifications_python')
 
             self.tf_listener = tf.TransformListener()
-
+            self.home = home
             self.HOME_ACTION_IDENTIFIER = 2
 
             self.action_topic_sub = None
@@ -175,9 +175,9 @@ class DeltaPoseControl:
         self.my_constrained_pose = ConstrainedPose()
         self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 
-        self.my_constrained_pose.target_pose.x = 0.3
-        self.my_constrained_pose.target_pose.y = -0.1
-        self.my_constrained_pose.target_pose.z = 0.305
+        self.my_constrained_pose.target_pose.x = self.home[0]
+        self.my_constrained_pose.target_pose.y = self.home[1]
+        self.my_constrained_pose.target_pose.z = self.home[2]
         self.my_constrained_pose.target_pose.theta_x = 0
         self.my_constrained_pose.target_pose.theta_y = 180
         self.my_constrained_pose.target_pose.theta_z = 0
@@ -225,11 +225,43 @@ class DeltaPoseControl:
         self._init_linear_pose()  
     
     def set_cartesian_angle(self, x, y=180, z=0):
+        print(z)
         self.my_constrained_pose.target_pose.theta_x = x
         self.my_constrained_pose.target_pose.theta_y = y
         self.my_constrained_pose.target_pose.theta_z = z
 
-    def set_cartesian_pose(self, x, y, z, tx, ty=180, tz=0):
+    def set_cartesian_pose(self, x, y, z):
+        # cartesian speed
+        # Prepare and send pose 2
+        self.req.input.handle.identifier = 1002
+        self.req.input.name = f"{self.req_handle}"
+        flag = False
+        if x != 0:
+            self.my_constrained_pose.target_pose.x = x
+            flag = True
+        if y != 0:
+            self.my_constrained_pose.target_pose.y = y
+            flag = True
+        if z != 0:
+            self.my_constrained_pose.target_pose.z = z
+            flag = True
+        if flag == True:
+            self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
+
+            rospy.loginfo(f"Sending pose {self.req_handle}...")
+            self.req_handle += 1
+            self.last_action_notif_type = None
+            try:
+                self.execute_action(self.req)
+            except rospy.ServiceException:
+                rospy.logerr("Failed to send pose 2")
+                success = False
+            else:
+                rospy.loginfo(f"Waiting for pose {self.req_handle} to finish...")
+
+            self.wait_for_action_end_or_abort()
+    
+    def set_cartesian_posed(self, x, y, z, tx=0, ty=180, tz=0):
         # cartesian speed
         # Prepare and send pose 2
         self.req.input.handle.identifier = 1002
@@ -244,8 +276,9 @@ class DeltaPoseControl:
         if z != 0:
             self.my_constrained_pose.target_pose.z += z
             flag = True
-        if tx != 0:
-            self.set_cartesian_angle(tx, ty, tz)
+        # if tz != 0:
+        #     self.set_cartesian_angle(tx, ty, tz)
+        #     flag = True
         if flag == True:
             self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
 

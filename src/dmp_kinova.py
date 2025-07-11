@@ -377,6 +377,10 @@ class DMPDG(object):
         
         return self.y, self.dy, self.dz / self.tau_y
 
+    def step_kinova(self,):
+        y, _, _ = self.step()
+        return y - self.y0
+    
     def forcing_term(self):
         Psi = self.psi(self.cs.rollout())
         sum_psi = (Psi.sum(axis=1, keepdims=True))
@@ -415,6 +419,7 @@ class DMPDG(object):
             if self.dmp_type == "delayed":
                 self.goal_d_rollout[t] = self.goal_d
                 self.d_goal_d_rollout[t] = self.dgoal_d
+        self.cs.reset()
         return y_rollout, dy_rollout, ddy_rollout
     
     def __test(self):

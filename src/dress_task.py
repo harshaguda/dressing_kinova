@@ -8,9 +8,9 @@ from delta_pose_control import DeltaPoseControl
 from utils import CustomCombinedExtractor, DummyEnv
 import numpy as np
 import rospy
-import time
 from pose_estimation import MediaPipe3DPose
 from controller import ControllerDressing
+from dmp_kinova import DMPDG, make_arm_trajectory
 
 def process_image(frame):
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
@@ -22,6 +22,7 @@ dpc = DeltaPoseControl()
 rospy.sleep(5)
 poses = MediaPipe3DPose(debug=True, translate=True)
 dummy_env = DummyEnv(obs="pos")
+dmp = DMPDG(n_dmps=3, n_bfs=500, T=1.5, dt=0.01, tau=1.0, tau_y=1.0, pattern="discrete", dmp_type="vanilla")
 controller = ControllerDressing()
 ### Add code to use policy model
 
@@ -57,38 +58,38 @@ def angle(elbow, wrist):
         
     m = (wrist[1] - elbow[1]) / (elbow[0] - wrist[0] )
     return np.arctan(m)
-
+dmp_flag = False
 for i in range(2048):
     ee_pos, rot = dpc.get_ee_pose()
-    ## ee_pos is y, x, z of the chosen axis.
-    # print(ee_pos.shape, ee_pos)
-    # ee_pos_aligned[1], ee_pos_aligned[0], ee_pos_aligned[2] = ee_pos[0], ee_pos[1], ee_pos[2]
-    # arm_pos = np.array([[0.10959604, 0.18741445,  1.00900006],
-    #                      [0.32794195, 0.22820899,  1.37300003],
-    #                      [0.39954785, 0.30343255,  1.49000013]])
     arm_pos, image = poses.get_arm_points()
-    # sth = poses.get_arm_points()
-    # print(sth)
-    # exit()
+    
     cv2.imwrite(f"/home/userlab/iri_lab/iri_ws/src/dressing_kinova/recordings/{i}.jpg", image)
     ee_pos[2] -= 0.12
     
-   
-    # print("ee_pos", ee_pos)
-    # print("arm_pos", arm_pos)
-    arm_pos[0] = arm_pos[0] - [0, 0.4, 0] 
-    action, _ = controller.meta_action(arm_pos, ee_pos)
-    tx = angle(arm_pos[1], arm_pos[0])
-    # action = simple_delta_controller(arm_pos[0], ee_pos)
-    # print("action", action)
-    print(ee_pos, arm_pos[0])
-    # print(action.shape)
-    x, y, z = action * action_factor
-    dpc.set_cartesian_pose(x=0, y=0, z=0, tx=tx)
-    cv2.waitKey(1)
-    
-    # k = cv2.waitKey(1)
-    # if k==27:    # Esc key to stop
-    #     exit()
+    arm_to_ee = np.linalg.norm(arm_pos[0] - ee_pos)
+    # dpc.set_cartesian_posed(0, 0.1, 0)
+    print(arm_to_ee)
+    if (arm_to_ee < 0.8):
+        t = 0.0
+        dt = 0.01
+        y_des = make_arm_trajectory(arm_pos)
+        dmp.imitate_trajectory(y_des)
+        dmp.rollout()
+        while (t < 1.5):
+            print("Moving arm")
+            arm_pos_des, _, _ = dmp.step()
+            t += dt
+            ee_pos, rot = dpc.get_ee_pose()
+            # diff = arm_pos_des - ee_pos
+            # print(arm_pos[-1] - ee_pos)
+            # print(diff)
+            # print(arm_pos_des)
+            x, y, z = arm_pos_des
+            print(x, y, z)
+            dpc.set_cartesian_posed(x, y, z)
+
+            cv2.waitKey(1)
+            rospy.sleep(d)
+
     rospy.on_shutdown(dpc.shutdown_node)
     rospy.sleep(d)
