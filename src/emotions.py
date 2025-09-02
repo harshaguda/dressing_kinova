@@ -27,6 +27,7 @@ class Emotions(object):
         self.cap = cv2.VideoCapture(self.camid)
 
         engage_flag = False
+        self.engagement = "none"
 
     def recognize_faces(self, frame: np.ndarray, device: str) -> List[np.array]:
         # Placeholder for face recognition logic
@@ -61,6 +62,8 @@ class Emotions(object):
         for bbox in bounding_boxes:
             box = bbox.astype(int)
             x1, y1, x2, y2 = box[0:4]
+            if x1 < 0 or y1 < 0 or x2 > frame.shape[1] or y2 > frame.shape[0]:
+                continue
             facial_images.append(frame[y1:y2, x1:x2, :])
         return facial_images, bounding_boxes
     
@@ -81,13 +84,18 @@ class Emotions(object):
                 if bbox.any() < 0:
                     continue
             emotions, scores = self.fer.predict_emotions(facial_images, logits=True)
-            
+            self.all_frames += facial_images
+            if len(self.all_frames) > 10:
+                self.all_frames = self.all_frames[-30:]
+                engagements, scores = self.fer.predict_engagement(self.all_frames, sliding_window_width=10)
+                self.all_frames = []
+                self.engagement = engagements[0]
         
             for bbox in bboxes:
                 box = bbox.astype(int)
                 x1, y1, x2, y2 = box[0:4]
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(image, f"{emotions[0]}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+            cv2.putText(image, f"{emotions[0]}, {self.engagement}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
         
         return image
 
