@@ -28,6 +28,7 @@ class Emotions(object):
 
         engage_flag = False
         self.engagement = "none"
+        self.emotion = "none"
 
     def recognize_faces(self, frame: np.ndarray, device: str) -> List[np.array]:
         # Placeholder for face recognition logic
@@ -84,6 +85,7 @@ class Emotions(object):
                 if bbox.any() < 0:
                     continue
             emotions, scores = self.fer.predict_emotions(facial_images, logits=True)
+            self.emotion = emotions[0]
             self.all_frames += facial_images
             if len(self.all_frames) > 10:
                 self.all_frames = self.all_frames[-30:]
@@ -97,7 +99,7 @@ class Emotions(object):
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
             cv2.putText(image, f"{emotions[0]}, {self.engagement}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
         
-        return image
+        return image, self.emotion, self.engagement
 
     def predict_engagement(self, all_frames):
         # Placeholder for engagement prediction logic
