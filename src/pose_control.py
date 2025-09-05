@@ -157,8 +157,8 @@ class ExampleCartesianActionsWithNotifications:
             self.my_constrained_pose = ConstrainedPose()
             self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 # 0.3, -0.3, 0.505
-            self.my_constrained_pose.target_pose.x = 0.3
-            self.my_constrained_pose.target_pose.y = -0.3
+            self.my_constrained_pose.target_pose.x = 0.0
+            self.my_constrained_pose.target_pose.y = -0.424
             self.my_constrained_pose.target_pose.z = 0.505
             self.my_constrained_pose.target_pose.theta_x = 0
             self.my_constrained_pose.target_pose.theta_y = 180
@@ -182,28 +182,52 @@ class ExampleCartesianActionsWithNotifications:
 
             self.wait_for_action_end_or_abort()
 
-    def set_pose(self, x, y, z):
+    def set_angle(self, x, y, z):
+        self.req.input.handle.identifier = 1001 + self.i
+        self.i += 1
+        self.req.input.name = f"pose{self.i}"
+        self.my_constrained_pose.target_pose.theta_x = 0
+        self.my_constrained_pose.target_pose.theta_y = 180
+        self.my_constrained_pose.target_pose.theta_z = 0
+        self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
+
+        rospy.loginfo(f"Sending pose {self.i}...")
+        self.last_action_notif_type = None
+        try:
+            self.execute_action(self.req)
+        except rospy.ServiceException:
+            rospy.logerr("Failed to send pose 2")
+            success = False
+        else:
+            rospy.loginfo("Waiting for pose 2 to finish...")
+
+        self.wait_for_action_end_or_abort()
+
+
+    def set_pose(self, x, y, z, theta_x=0, theta_y=180, theta_z=0):
         # Prepare and send pose 2
-            self.req.input.handle.identifier = 1001 + self.i
-            self.i += 1
-            self.req.input.name = f"pose{self.i}"
-            self.my_constrained_pose.target_pose.x = x
-            self.my_constrained_pose.target_pose.y = y
-            self.my_constrained_pose.target_pose.z = z
+        self.req.input.handle.identifier = 1001 + self.i
+        self.i += 1
+        self.req.input.name = f"pose{self.i}"
+        self.my_constrained_pose.target_pose.x = x
+        self.my_constrained_pose.target_pose.y = y
+        self.my_constrained_pose.target_pose.z = z
+        self.my_constrained_pose.target_pose.theta_x = theta_x
+        self.my_constrained_pose.target_pose.theta_y = theta_y
+        self.my_constrained_pose.target_pose.theta_z = theta_z
+        self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
 
-            self.req.input.oneof_action_parameters.reach_pose[0] = self.my_constrained_pose
+        rospy.loginfo(f"Sending pose {self.i}...")
+        self.last_action_notif_type = None
+        try:
+            self.execute_action(self.req)
+        except rospy.ServiceException:
+            rospy.logerr(f"Failed to send pose {self.i}")
+            success = False
+        else:
+            rospy.loginfo(f"Waiting for pose {self.i} to finish...")
 
-            rospy.loginfo(f"Sending pose {self.i}...")
-            self.last_action_notif_type = None
-            try:
-                self.execute_action(self.req)
-            except rospy.ServiceException:
-                rospy.logerr("Failed to send pose 2")
-                success = False
-            else:
-                rospy.loginfo("Waiting for pose 2 to finish...")
-
-            self.wait_for_action_end_or_abort()
+        self.wait_for_action_end_or_abort()
 
     
     def main(self):

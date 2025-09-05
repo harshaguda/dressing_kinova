@@ -217,6 +217,7 @@ class TrajectoryControl:
             # goal.trajectory.append(self.FillCartesianWaypoint(0.63, -0.22, 0.45, math.radians(90), 0, math.radians(90), 0.1))
             # goal.trajectory.append(self.FillCartesianWaypoint(0.65, 0.05,  0.45, math.radians(90), 0, math.radians(90), 0))
             # goal.trajectory.append(self.FillCartesianWaypoint(0.3,  -0.10,   0.305,  math.radians(0), math.radians(180), math.radians(0), 0))
+            print(self.home[0], self.home[1], self.home[2])
             for i in range(traj.shape[0]):
                 point = traj[i]
                 print(point)
@@ -227,6 +228,9 @@ class TrajectoryControl:
         rospy.loginfo("Sending goal(Cartesian waypoint) to action server...")
         try:
             client.send_goal(goal)
+            if not client.wait_for_result(timeout=rospy.Duration(30)):
+                rospy.logerr("Action server did not finish within timeout.")
+                return False
         except rospy.ServiceException:
             rospy.logerr("Failed to send goal.")
             return False

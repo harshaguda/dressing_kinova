@@ -8,10 +8,11 @@ else:
     file_name = "trajectory.txt"
 arr = np.genfromtxt(file_name, delimiter=",")
 
-fig = plt.figure()
-ax = fig.add_subplot(projection='3d')
+# fig = plt.figure()
+# ax = fig.add_subplot(projection='3d')
 
-ax.plot(arr[:, 0], arr[:, 1], arr[:, 2])
-ax.text(arr[0,0], arr[0,1], arr[0,2], "Start")
-ax.text(arr[-1,0], arr[-1,1], arr[-1,2], "Goal")
+# ax.plot(arr[:, 0], arr[:, 1], arr[:, 2])
+# ax.text(arr[0,0], arr[0,1], arr[0,2], "Start")
+# ax.text(arr[-1,0], arr[-1,1], arr[-1,2], "Goal")
+plt.plot(arr[:, 0], arr[:, 1])
 plt.show()

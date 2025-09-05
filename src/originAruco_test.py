@@ -37,6 +37,14 @@ def detect_aruco_markers(
         color_frame=None,
         depth_colormap=None,
         idx_marker=0,
+        depth_scale=None,
+        depth_min=None,
+        depth_max=None,
+        depth_intrin=None,
+        color_intrin=None,
+        depth_to_color_extrin=None,
+        color_to_depth_extrin=None,
+        
         ):
     """
     Detect ArUco markers in the image
@@ -64,7 +72,18 @@ def detect_aruco_markers(
     if ids is not None and len(ids) > 0:
         # rvec, tvec, _ = cv2.aruco.(corners, 0.05, matrix_coefficients, distortion_coefficients)
         x_px, y_px = int(corners[idx_marker].mean(axis=1)[0, 0]), int(corners[idx_marker].mean(axis=1)[0, 1])
-        vert = get_3d_point_from_pixel(depth_frame, color_frame, x_px, y_px)
+        dx, dy = rs.rs2_project_color_pixel_to_depth_pixel(
+            depth_frame.get_data(),
+            depth_scale,
+            depth_min,
+            depth_max,
+            depth_intrin,
+            color_intrin,
+            depth_to_color_extrin,
+            color_to_depth_extrin,
+            list([float(x_px), float(y_px)])
+        )
+        vert, depth_value = get_3d_point_from_pixel(depth_frame, color_frame, int(dx), int(dy), x_px, y_px)
 
         # If camera calibration is provided, estimate pose
         if matrix_coefficients is not None and distortion_coefficients is not None:
@@ -103,12 +122,14 @@ def detect_aruco_markers(
                     # Print rotation vector for debugging
                     # print(f"Marker {ids[i][0]} rotation vector: {rvec} translation vector: {vert}")
         frame = cv2.circle(frame, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
-        
+        # depth_3d = depth_frame.get_distance(int(dx), int(dy))
+        # print(dx, dy, depth_value, depth_3d)
+        depth_colormap = cv2.circle(depth_colormap, center=(int(dx), int(dy)), radius=5, color=(0, 255, 0), thickness=-1)
         cv2.aruco.drawDetectedMarkers(frame, corners, ids)
     
-    return frame, rvec, vert
+    return frame, rvec, vert, depth_colormap
 
-def get_3d_point_from_pixel(depth_frame, color_frame, x, y):
+def get_3d_point_from_pixel(depth_frame, color_frame, dx, dy, x, y):
         """
         Convert a 2D pixel coordinate (x,y) to a 3D point using the RealSense camera
         
@@ -120,22 +141,23 @@ def get_3d_point_from_pixel(depth_frame, color_frame, x, y):
             tuple: (x, y, z) coordinates in meters in camera coordinate system
                 or None if the depth value at the pixel is invalid
         """
+        print(x, y, dx, dy)
         if not depth_frame or not color_frame:
             return None
         
         # Get depth value at the pixel (in meters)
         try:
-            depth_value = depth_frame.get_distance(x, y)
+            depth_value = depth_frame.get_distance(dx, dy)
         except RuntimeError as e:
+            depth_value = 0
             print(f"Error getting depth value at pixel ({x}, {y}): {e}")
         if depth_value <= 0:
             print(f"Invalid depth at pixel ({x}, {y})")
-        
         # Convert pixel to 3D point in camera coordinate system
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
+        intrinsics = rs.intrinsics()
         point_3d = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [x, y], depth_value)
-        
-        return point_3d
+        return point_3d, depth_value
 
 def get_realsense_intrinsics():
     # Initialize RealSense pipeline
@@ -185,7 +207,7 @@ def save_translation_matrix(rvec, tvec):
     Trans[3, 3] = 1
     
     # np.savetxt("translation_matrix.txt", Trans, delimiter=",")
-    np.save("translatioqn_matrix", Trans)
+    np.save("translation_matrix", Trans)
     
     print(Trans @ tvec4.T, Trans, tvec4)
     
@@ -222,9 +244,8 @@ def main():
             config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
             config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
             colorizer = rs.colorizer()
-            pipeline.start(config)
+            profile = pipeline.start(config)
 
-            
             print("RealSense camera initialized")
         except ImportError:
             print("pyrealsense2 module not found, falling back to webcam")
@@ -240,8 +261,21 @@ def main():
     t_pressed = False
     
     trans = np.load("translation_matrix.npy")
+    from pose_control import ExampleCartesianActionsWithNotifications
+    import rospy
+    # pc = ExampleCartesianActionsWithNotifications()
+    # pc.main()
     
+    # pc.set_pose(0.577, 0.1, 0.434, 90, 0, 90)
+    original_pose = np.array([0.577, 0.1, 0.434])
+    T_new = np.array([[1, 0, 0, 0.627],
+                      [0, 1, 0, 0.0],
+                      [0, 0, 1, 0.434],
+                      [0, 0, 0, 1]])
     while True:
+    # for _ in range(50):
+        # original_pose += 0.05
+        # pc.set_pose(original_pose[0], original_pose[1], original_pose[2], 90, 0, 90)
         # Get frame from camera
         if args.use_realsense:
             frames = pipeline.wait_for_frames()
@@ -250,6 +284,19 @@ def main():
             # Extract intrinsics from the color stream
             intrinsics = color_frame.profile.as_video_stream_profile().intrinsics
             
+            
+            # There values are needed to calculate the mapping
+            depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
+            depth_min = 0.11 #meter
+            depth_max = 1.0 #meter
+
+            depth_intrin = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+            color_intrin = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+
+            depth_to_color_extrin =  profile.get_stream(rs.stream.depth).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.color))
+            color_to_depth_extrin =  profile.get_stream(rs.stream.color).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.depth))
+
+                        
             # Create camera matrix
             camera_matrix = np.array([
                 [intrinsics.fx, 0, intrinsics.ppx],
@@ -270,16 +317,25 @@ def main():
                 break
         
         # Process frame
-        output, rvec, vert = detect_aruco_markers(frame, args.dict, 
+        output, rvec, vert, depth_colormap = detect_aruco_markers(frame, args.dict, 
                                      camera_matrix, dist_coeffs,
                                         depth_frame, color_frame,
-                                     depth_colormap)
+                                     depth_colormap, 0, depth_scale,
+            depth_min,
+            depth_max,
+            depth_intrin,
+            color_intrin,
+            depth_to_color_extrin,
+            color_to_depth_extrin,)
+        
         if vert is not None:
             P_vert = np.array([vert[0], vert[1], vert[2], 1])
             new_vert = trans @ P_vert
-            print("new vert",new_vert)
+            # new_vert = T_new @ new_vert
+            print("new vert",np.round(new_vert, 3)*100)
         # Show result
         cv2.imshow("ArUco Marker Detection", output)
+        cv2.imshow("Depth Frame", depth_colormap)
         
         # Break loop on 'q' key
         if cv2.waitKey(1) & 0xFF == ord('q'):

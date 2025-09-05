@@ -16,7 +16,7 @@ class ActionsPerf(object):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.image_processor = AutoImageProcessor.from_pretrained("MCG-NJU/videomae-base-finetuned-kinetics")
-        self.model = VideoMAEForVideoClassification.from_pretrained("/home/userlab/iri_lab/iri_ws/src/actionvideomae/checkpoint-120", attn_implementation="sdpa").to(self.device)
+        self.model = VideoMAEForVideoClassification.from_pretrained("checkpoint-120", attn_implementation="sdpa").to(self.device)
 
         # self.camid = camid
         # self.cap = cv2.VideoCapture(self.camid)

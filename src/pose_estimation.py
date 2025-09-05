@@ -70,43 +70,26 @@ class MediaPipe3DPose:
         self.colorizer = rs.colorizer()
 
         # Start streaming
-        self.pipeline.start(config)
+        profile = self.pipeline.start(config)
+        # There values are needed to calculate the mapping
+        self.depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
+        self.depth_min = 0.11 #meter
+        self.depth_max = 1.0 #meter
+
+        self.depth_intrin = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
+        self.color_intrin = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+
+        self.depth_to_color_extrin =  profile.get_stream(rs.stream.depth).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.color))
+        self.color_to_depth_extrin =  profile.get_stream(rs.stream.color).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.depth))
+
+                        
 
         self.previous_valid_pose = [[0,0,0], [0,0,0], [0,0,0]]
         self.aruco_x, self.aruco_y = None, None
-        self.get_realsense_intrinsics()
-        self.translation_matrix = None
         
         # self._init_translation_matrix()
-        self.translation_matrix  = np.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/src/translation_matrix.npy")
-        # self.translation_matrix = np.array([[8.957507014274597168e-01,-1.949338763952255249e-01,3.995389938354492188e-01,-9.345052391290664673e-02],
-        #                            [-4.422885775566101074e-01,-3.001050353050231934e-01,8.451732397079467773e-01,-7.846307754516601562e-01],
-        #                            [-4.484923928976058960e-02,-9.337760806083679199e-01,-3.550363183021545410e-01,6.802514195442199707e-01],
-        #                            [0.000000000000000000e+00,0.000000000000000000e+00,0.000000000000000000e+00,1.000000000000000000e+00]])
-    def _init_translation_matrix(self):
-        frames = self.pipeline.wait_for_frames()
-        color_frame = frames.get_color_frame()
-        depth_frame = frames.get_depth_frame()
-        if not depth_frame or not color_frame:
-            print("No frames")
-        frame = np.asanyarray(color_frame.get_data())
-        depth_colormap = np.asanyarray(self.colorizer.colorize(depth_frame).get_data())
-        rvec, vert = None, None
-        flag = True
-        while flag:
-            output, rvec, vert = self.detect_aruco_markers(frame, 
-                                                    "DICT_5X5_50",  # replace with an args
-                                                    depth_frame=depth_frame, 
-                                                    color_frame=color_frame,
-                                                    depth_colormap=depth_colormap)
-            if (rvec is None) or (np.sum(vert) == 0):
-                flag = True
-            else:
-                flag = False
-            # cv2.imshow("Original Image Feed", output)
-            # cv2.waitKey(1)
-        self.translation_matrix = self.get_translation_matrix(rvec, vert)
-    
+        self.translation_matrix  = np.load("translation_matrix.npy")
+        
     def draw_landmarks_on_image(self, rgb_image, detection_result):
         pose_landmarks_list = detection_result.pose_landmarks
         annotated_image = np.copy(rgb_image)
@@ -128,8 +111,9 @@ class MediaPipe3DPose:
         return annotated_image
 
 
-
-    def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, x, y, translate=False):
+    # def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, dx, dy, x, y, translate=False):
+    def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, dx, dy, x, y, translate=False):
+    
         """
         Convert a 2D pixel coordinate (x,y) to a 3D point using the RealSense camera
         
@@ -141,25 +125,27 @@ class MediaPipe3DPose:
             tuple: (x, y, z) coordinates in meters in camera coordinate system
                 or None if the depth value at the pixel is invalid
         """
+        # x, y, dx, dy = 85, 369, 186, 314
+        # 53.3 -31.6  31.6
         if not depth_frame or not color_frame:
             return None
         
         # Get depth value at the pixel (in meters)
         try:
-            depth_value = depth_frame.get_distance(x, y)
+            depth_value = depth_frame.get_distance(dx, dy)
         except RuntimeError as e:
+            depth_value = 0
             print(f"Error getting depth value at pixel ({x}, {y}): {e}")
-            return self.previous_valid_pose[idx]
         if depth_value <= 0:
             print(f"Invalid depth at pixel ({x}, {y})")
-            return self.previous_valid_pose[idx]
-        
         # Convert pixel to 3D point in camera coordinate system
         depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
+        intrinsics = rs.intrinsics()
         point_3d = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [x, y], depth_value)
         if translate:
             point_3d = self.t_camera_to_aruco(point_3d)
         self.previous_valid_pose[idx] = point_3d
+        # print(depth_value, x, y, dx, dy)
         return point_3d
 
 
@@ -170,8 +156,8 @@ class MediaPipe3DPose:
         # Create alignment primitive with color as its target stream:
         # It is a computationally expensive operation, maybe in future just project 
         # the required pixel to the depth frame and get x,y,z values.
-        align = rs.align(rs.stream.color)
-        frames = align.process(frames)
+        # align = rs.align(rs.stream.color)
+        # frames = align.process(frames)
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
         if not depth_frame: return None, None
@@ -189,12 +175,14 @@ class MediaPipe3DPose:
         # pass by reference.
         image.flags.writeable = False
         results = self.pose.process(image)
-        image_rows, image_cols, _ = image.shape
         shoulder_verts = []
         required_landmarks = [
             # mp_pose.PoseLandmark.LEFT_SHOULDER,
             # mp_pose.PoseLandmark.LEFT_ELBOW,
-            # mp_pose.PoseLandmark.LEFT_WRIST,
+            # self.mp_pose.PoseLandmark.LEFT_WRIST,
+            # self.mp_pose.PoseLandmark.LEFT_WRIST,
+            # self.mp_pose.PoseLandmark.LEFT_ELBOW,
+            # self.mp_pose.PoseLandmark.LEFT_SHOULDER,
             self.mp_pose.PoseLandmark.RIGHT_WRIST,
             self.mp_pose.PoseLandmark.RIGHT_ELBOW,
             self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
@@ -208,164 +196,47 @@ class MediaPipe3DPose:
         shoulder_3d = []
         for i, vert in enumerate(shoulder_verts):
             x_px, y_px = vert
-            shoulder_3d.append(self.get_3d_point_from_pixel(i, depth_frame, color_frame, x_px, y_px, self.translate))
-        
+            dx, dy = rs.rs2_project_color_pixel_to_depth_pixel(
+            depth_frame.get_data(),
+            self.depth_scale,
+            self.depth_min,
+            self.depth_max,
+            self.depth_intrin,
+            self.color_intrin,
+            self.depth_to_color_extrin,
+            self.color_to_depth_extrin,
+            list([float(x_px), float(y_px)])
+        )
+            shoulder_3d.append(self.get_3d_point_from_pixel(i, depth_frame, color_frame, int(dx), int(dy), x_px, y_px, self.translate))
+            # print(self.get_3d_point_from_pixel(i, depth_frame, color_frame, int(dx), int(dy), x_px, y_px, self.translate)*100)
         if self.debug:
             image.flags.writeable = True
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            # mp_drawing.draw_landmarks(
-            #     image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-            # cv2.imshow("Original Image Feed", image)
-            image = cv2.circle(image, center=(320, 240), radius=5, color=(255, 0, 0), thickness=-1)
-            if self.aruco_x is not None:
-                image = cv2.circle(image, center=(self.aruco_x, self.aruco_y), radius=5, color=(255, 0, 0), thickness=-1)
+            # image = cv2.circle(image, center=(320, 240), radius=5, color=(255, 0, 0), thickness=-1)
             for i, vert in enumerate(shoulder_verts):
                 x_px, y_px = vert
                 # Draw a circle at the landmark position
                 image = cv2.circle(image, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
-                depth_colormap = cv2.circle(depth_colormap, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
-                # put x, y, z position on the image
-                if shoulder_3d[i] is not None:
+                depth_colormap = cv2.circle(depth_colormap, center=(int(dx), int(dy)), radius=5, color=(0, 255, 0), thickness=-1)
+            #     # put x, y, z position on the image
+            #     if shoulder_3d[i] is not None:
                 
-                    position_text = f"({shoulder_3d[i][0]:.2f}, {shoulder_3d[i][1]:.2f}, {shoulder_3d[i][2]:.2f})"
-                    cv2.putText(image, position_text, (x_px, y_px), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1, cv2.LINE_AA)
+            #         position_text = f"({shoulder_3d[i][0]:.2f}, {shoulder_3d[i][1]:.2f}, {shoulder_3d[i][2]:.2f})"
+            #         cv2.putText(image, position_text, (x_px, y_px), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1, cv2.LINE_AA)
 
             
             self.mp_drawing.draw_landmarks(
                     image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
             
             cv2.imshow('RealSense Pose Detector', image)
-            # cv2.imshow('RealSense Depth', depth_colormap)
+            cv2.imshow('RealSense Depth', depth_colormap)
 
             if cv2.waitKey(1) & 0xFF == 27:
                 exit()
         if len(shoulder_3d) == 0:
-            return np.array(self.previous_valid_pose), image
+            # return np.array(self.previous_valid_pose), image
+            return np.zeros((3,3)), image
         return np.array(shoulder_3d), image
-    
-    def detect_aruco_markers(
-            self,
-            frame, 
-            aruco_dict_type,
-            depth_frame=None,
-            color_frame=None,
-            depth_colormap=None,
-            ):
-        """
-        Detect ArUco markers in the image
-        
-        Args:
-            frame: Input image frame
-            aruco_dict_type: Type of ArUco dictionary
-            matrix_coefficients: Camera matrix (optional, for pose estimation)
-            distortion_coefficients: Distortion coefficients (optional, for pose estimation)
-            
-        Returns:
-            frame: Output image with detected markers
-        """
-        print("detecting aruco marker")
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Get ArUco dictionary
-        aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT[aruco_dict_type])
-        parameters = cv2.aruco.DetectorParameters()
-        
-        # Detect ArUco markers
-        detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
-        corners, ids, rejected = detector.detectMarkers(gray)
-        rvec, tvec, vert = None, None, None
-        # Draw detected markers if any
-        if ids is not None and len(ids) > 0:
-            # rvec, tvec, _ = cv2.aruco.(corners, 0.05, matrix_coefficients, distortion_coefficients)
-            x_px, y_px = int(corners[0].mean(axis=1)[0, 0]), int(corners[0].mean(axis=1)[0, 1])
-            self.aruco_x, self.aruco_y = x_px, y_px
-            if self.translation_matrix is None:
-                translate = False
-            else:
-                translate = True
-            vert = self.get_3d_point_from_pixel(0, depth_frame, color_frame, x_px, y_px, translate)
-            self.aruco_vert = vert
-            # exit()
-            # If camera calibration is provided, estimate pose
-            if self.matrix_coefficients is not None and self.distortion_coefficients is not None:
-                # Define marker size (in meters)
-                marker_size = 0.05
-                
-                # For each detected marker
-                for i in range(len(ids)):
-                    # Define marker corners in 3D space (marker coordinate system)
-                    objPoints = np.array([
-                        [-marker_size/2, marker_size/2, 0],
-                        [marker_size/2, marker_size/2, 0],
-                        [marker_size/2, -marker_size/2, 0],
-                        [-marker_size/2, -marker_size/2, 0]
-                    ], dtype=np.float32)
-                    
-                    # Get 2D corners from detected marker
-                    imgPoints = corners[i][0].astype(np.float32)
-                    
-                    # Solve for pose
-                    success, rvec, tvec = cv2.solvePnP(
-                        objPoints, imgPoints, self.matrix_coefficients, self.distortion_coefficients
-                    )
-                    
-                    if success and self.debug:
-                        # Draw axis for the marker
-                        cv2.drawFrameAxes(frame, self.matrix_coefficients, self.distortion_coefficients, 
-                                        rvec, tvec, 0.03)
-                        
-                        # Display position information
-                        marker_position = f"ID:{ids[i][0]} x:{tvec[0][0]:.2f} y:{tvec[1][0]:.2f} z:{tvec[2][0]:.2f}"
-                        cv2.putText(frame, marker_position, 
-                                (int(corners[i][0][0][0]), int(corners[i][0][0][1]) - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                        
-                        # Print rotation vector for debugging
-                        # print(f"Marker {ids[i][0]} rotation vector: {rvec} translation vector: {tvec}")
-                        frame = cv2.circle(frame, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
-                        
-                        cv2.aruco.drawDetectedMarkers(frame, corners, ids)   
-            # cv2.imshow("aruco", frame)
-            # cv2.waitKey(1)                 
-        return frame, rvec, vert
-    
-    def get_translation_matrix(self, rvec, tvec):
-        """
-        Get the rotation and translation vectors.
-        
-        Args:
-            rvec: Rotation vector
-            tvec: Translation vector
-        """
-
-        R, _ = cv2.Rodrigues(rvec)
-        tvec4 = np.array([tvec[0], tvec[1], tvec[2]])
-        Trans = np.zeros((4, 4), dtype=np.float32)
-        Trans[0:3, 0:3] = R.T
-        Trans[:-1,3] = R.T @ (-tvec4)
-        Trans[3, 3] = 1
-        return Trans
-
-
-
-    def get_realsense_intrinsics(self):
-        
-        # Get the first frame
-        frames = self.pipeline.wait_for_frames()
-        color_frame = frames.get_color_frame()
-        
-        # Extract intrinsics from the color stream
-        intrinsics = color_frame.profile.as_video_stream_profile().intrinsics
-        
-        # Create camera matrix
-        self.matrix_coefficients = np.array([
-            [intrinsics.fx, 0, intrinsics.ppx],
-            [0, intrinsics.fy, intrinsics.ppy],
-            [0, 0, 1]
-        ])
-        
-        # Get distortion coefficients
-        self.distortion_coefficients = np.array(intrinsics.coeffs)
 
     def t_camera_to_aruco(self, point):
         """
@@ -378,9 +249,12 @@ class MediaPipe3DPose:
         Returns:
         point: Transformed 3D point in ArUco marker coordinates
         """
-
+        T_new = np.eye(4)
+        T_new[:-1, 3] = [0.672 , 0.0, 0.434]  # Translation vector
         point = np.array([point[0], point[1], point[2], 1])
         point = self.translation_matrix @ point
+
+        # point = T_new @ point
         # point = point[:3] / point[3]
         return point[:-1]
 
@@ -389,5 +263,5 @@ if __name__ == "__main__":
     poses = MediaPipe3DPose(debug=True, translate=True)
     
     while True:
-        points = poses.get_arm_points()
-        print(points)
+        points, _ = poses.get_arm_points()
+        print(points[0]*100)
