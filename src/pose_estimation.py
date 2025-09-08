@@ -88,7 +88,7 @@ class MediaPipe3DPose:
         self.aruco_x, self.aruco_y = None, None
         
         # self._init_translation_matrix()
-        self.translation_matrix  = np.load("translation_matrix.npy")
+        self.translation_matrix  = np.load("/home/userlab/iri_lab/iri_ws/src/dressing_kinova/src/translation_matrix.npy")
         
     def draw_landmarks_on_image(self, rgb_image, detection_result):
         pose_landmarks_list = detection_result.pose_landmarks
@@ -97,7 +97,7 @@ class MediaPipe3DPose:
         # Loop through the detected poses to visualize.
         for idx in range(len(pose_landmarks_list)):
             pose_landmarks = pose_landmarks_list[idx]
-
+            # print(pose_landmarks, idx)
             # Draw the pose landmarks.
             pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
             pose_landmarks_proto.landmark.extend([
@@ -180,12 +180,12 @@ class MediaPipe3DPose:
             # mp_pose.PoseLandmark.LEFT_SHOULDER,
             # mp_pose.PoseLandmark.LEFT_ELBOW,
             # self.mp_pose.PoseLandmark.LEFT_WRIST,
-            # self.mp_pose.PoseLandmark.LEFT_WRIST,
-            # self.mp_pose.PoseLandmark.LEFT_ELBOW,
-            # self.mp_pose.PoseLandmark.LEFT_SHOULDER,
-            self.mp_pose.PoseLandmark.RIGHT_WRIST,
-            self.mp_pose.PoseLandmark.RIGHT_ELBOW,
-            self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
+            self.mp_pose.PoseLandmark.LEFT_WRIST,
+            self.mp_pose.PoseLandmark.LEFT_ELBOW,
+            self.mp_pose.PoseLandmark.LEFT_SHOULDER,
+            # self.mp_pose.PoseLandmark.RIGHT_WRIST,
+            # self.mp_pose.PoseLandmark.RIGHT_ELBOW,
+            # self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
         ]
         if results.pose_landmarks is not None:
             for landmark in required_landmarks:
@@ -213,20 +213,33 @@ class MediaPipe3DPose:
             image.flags.writeable = True
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             # image = cv2.circle(image, center=(320, 240), radius=5, color=(255, 0, 0), thickness=-1)
+            # wrist = shoulder_verts[0]
+            # elbow = shoulder_verts[1]
+            
+            # v_n = np.array(elbow) - np.array(wrist)
+            # v_n = v_n / np.linalg.norm(v_n)
+            # ext_wrist = -v_n * 50 + np.array(wrist)
+            # ext_wrist = ext_wrist.astype(int)
+            # image = cv2.circle(image, center=(ext_wrist[0], ext_wrist[1]), radius=5, color=(0, 255, 255), thickness=-1)
+            
             for i, vert in enumerate(shoulder_verts):
                 x_px, y_px = vert
                 # Draw a circle at the landmark position
-                image = cv2.circle(image, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
+                image = cv2.circle(image, center=(x_px, y_px), radius=5, color=(0, 0, 255), thickness=-1)
                 depth_colormap = cv2.circle(depth_colormap, center=(int(dx), int(dy)), radius=5, color=(0, 255, 0), thickness=-1)
+                if i != 0:
+                    x_px1, y_px1 = shoulder_verts[i-1]
+                    image = cv2.line(image, (x_px, y_px), (x_px1, y_px1), (0, 255, 0), 2)
             #     # put x, y, z position on the image
             #     if shoulder_3d[i] is not None:
                 
             #         position_text = f"({shoulder_3d[i][0]:.2f}, {shoulder_3d[i][1]:.2f}, {shoulder_3d[i][2]:.2f})"
             #         cv2.putText(image, position_text, (x_px, y_px), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1, cv2.LINE_AA)
 
-            
-            self.mp_drawing.draw_landmarks(
-                    image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
+            # print(results.pose_landmarks)
+            # exit()
+            # self.mp_drawing.draw_landmarks(
+            #         image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
             
             cv2.imshow('RealSense Pose Detector', image)
             cv2.imshow('RealSense Depth', depth_colormap)
@@ -253,7 +266,7 @@ class MediaPipe3DPose:
         T_new[:-1, 3] = [0.672 , 0.0, 0.434]  # Translation vector
         point = np.array([point[0], point[1], point[2], 1])
         point = self.translation_matrix @ point
-
+        # print("After translation", point)
         # point = T_new @ point
         # point = point[:3] / point[3]
         return point[:-1]

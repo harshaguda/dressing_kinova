@@ -110,6 +110,7 @@ def detect_aruco_markers(
                 
                 if success:
                     # Draw axis for the marker
+                    
                     cv2.drawFrameAxes(frame, matrix_coefficients, distortion_coefficients, 
                                      rvec, tvec, 0.03)
                     

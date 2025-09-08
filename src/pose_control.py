@@ -18,7 +18,7 @@ from kortex_driver.srv import *
 from kortex_driver.msg import *
 
 class ExampleCartesianActionsWithNotifications:
-    def __init__(self):
+    def __init__(self, send_home=False):
         self.i = 1
         try:
             rospy.init_node('example_cartesian_poses_with_notifications_python')
@@ -30,6 +30,7 @@ class ExampleCartesianActionsWithNotifications:
 
             self.all_notifs_succeeded = True
 
+            self.send_home = send_home
             # Get node params
             self.robot_name = rospy.get_param('~robot_name', "my_gen3")
 
@@ -157,8 +158,8 @@ class ExampleCartesianActionsWithNotifications:
             self.my_constrained_pose = ConstrainedPose()
             self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 # 0.3, -0.3, 0.505
-            self.my_constrained_pose.target_pose.x = 0.0
-            self.my_constrained_pose.target_pose.y = -0.424
+            self.my_constrained_pose.target_pose.x = 0.3
+            self.my_constrained_pose.target_pose.y = -0.3
             self.my_constrained_pose.target_pose.z = 0.505
             self.my_constrained_pose.target_pose.theta_x = 0
             self.my_constrained_pose.target_pose.theta_y = 180
@@ -247,7 +248,7 @@ class ExampleCartesianActionsWithNotifications:
             
             #*******************************************************************************
             # Start the example from the Home position
-            # success &= self.example_home_the_robot()
+            success &= self.example_home_the_robot()
             #*******************************************************************************
 
             #*******************************************************************************

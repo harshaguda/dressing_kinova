@@ -97,7 +97,7 @@ class Emotions(object):
                 box = bbox.astype(int)
                 x1, y1, x2, y2 = box[0:4]
                 cv2.rectangle(image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(image, f"{emotions[0]}, {self.engagement}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+            cv2.putText(image, f"{emotions[0]}, {self.engagement}", (0,410), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
         
         return image, self.emotion, self.engagement
 
@@ -107,10 +107,10 @@ class Emotions(object):
     
 
 if __name__ == "__main__":
-    emotions = Emotions(device='cuda' if torch.cuda.is_available() else 'cpu', camid=10)
+    emotions = Emotions(device='cuda' if torch.cuda.is_available() else 'cpu', camid=4)
     while True:
         
-        image = emotions.predict_emotions()
+        image, _, _ = emotions.predict_emotions()
         
         # Display the frame with detected faces and emotions
         if image is not None:
