@@ -29,12 +29,16 @@ class ExampleMoveItTrajectories(object):
 
     # Initialize the node
     super(ExampleMoveItTrajectories, self).__init__()
-    moveit_commander.roscpp_initialize(sys.argv)
+    print("sys.argv", sys.argv)
+    # args = ['/home/userlab/iri_lab/iri_ws/src/dressing_kinova/src/dress_w_moveit.py', '__name:=dress_moveit',]
+    # moveit_commander.roscpp_initialize(sys.argv)
     rospy.init_node('example_move_it_trajectories')
 
     try:
       self.is_gripper_present = rospy.get_param(rospy.get_namespace() + "is_gripper_present", False)
+      print("namespace", rospy.get_namespace())
       if self.is_gripper_present:
+        print("namespace", rospy.get_namespace())
         gripper_joint_names = rospy.get_param(rospy.get_namespace() + "gripper_joint_names", [])
         self.gripper_joint_name = gripper_joint_names[0]
       else:
@@ -88,14 +92,14 @@ class ExampleMoveItTrajectories(object):
 
     # Set the joint target configuration
     if self.degrees_of_freedom == 7:
-      print(pi)
-      joint_positions[0] = np.deg2rad(60)
-      joint_positions[1] = 0
-      joint_positions[2] = pi/4
-      joint_positions[3] = -pi/4
-      joint_positions[4] = 0
-      joint_positions[5] = pi/2
-      joint_positions[6] = 0.2
+      joint_positions[0] = np.deg2rad(90)
+      joint_positions[1] = np.deg2rad(48.0)
+      joint_positions[2] = np.deg2rad(332.67)
+      joint_positions[3] = np.deg2rad(54.43)
+      joint_positions[4] = np.deg2rad(21.92)
+      joint_positions[5] = np.deg2rad(84.78)
+      joint_positions[6] = np.deg2rad(52)
+      
     elif self.degrees_of_freedom == 6:
       joint_positions[0] = 0
       joint_positions[1] = 0
@@ -156,11 +160,14 @@ class ExampleMoveItTrajectories(object):
 
 moveit = ExampleMoveItTrajectories()
 success = moveit.is_init_success
+# moveit.reach_named_position('home')
+moveit.reach_joint_angles(tolerance=0.1)
 try:
     rospy.delete_param("/kortex_examples_test_results/moveit_general_python")
 except:
     pass
-
+print(success)
+exit()
 # args = argparse.ArgumentParser()
 # args.add_argument('--camid', type=int, default=4, help='Camera ID for video capture')
 # args.add_argument('--record', action='store_true', help='Record images')
@@ -173,7 +180,7 @@ action_rec = ActionsPerf(device='cuda' if torch.cuda.is_available() else 'cpu', 
 # tc = TrajectoryControl(home=[0.3, -0.3, 0.505])
 
 poses = MediaPipe3DPose(debug=True, translate=True)
-dmp = DMPDG(n_dmps=3, n_bfs=500, T=1.5, dt=0.01, tau=1.0, tau_y=1.0, pattern="discrete", dmp_type="vanilla")
+dmp = DMPDG(n_dmps=3, n_bfs=500, T=1.5, dt=0.1, tau=1.0, tau_y=1.0, pattern="discrete", dmp_type="vanilla")
 is_Approached = False
 is_Extended = False
 i = 0
@@ -218,74 +225,76 @@ v_n = elbow - wrist
 v_n /= np.linalg.norm(v_n)
 ext_wrist = -v_n * 0.25 + wrist
 
-init_traj = np.vstack((ext_wrist, arm_pos))
-
-# y_des = make_arm_trajectory(arm_poses[25:].mean(axis=0))
-
-y_des = make_arm_trajectory(arm_pos)
+# arm_pos[0] = ext_wrist
+current_pos = moveit.get_cartesian_pose()
+ee_pos = np.array([current_pos.position.x, current_pos.position.y, current_pos.position.z])
+init_traj = np.vstack((ee_pos, ext_wrist, arm_pos))
+# print(init_traj.shape)
+# exit()
+y_des = make_arm_trajectory(init_traj)
 dmp.imitate_trajectory(y_des)
 traj, _, _ = dmp.rollout()
-traj = traj[::10].copy()
-traj = np.vstack((ext_wrist, traj))
-# plt.plot(traj[:, 0], traj[:, 1])
-## clip values to avoid going out of workspace
-traj = traj.clip(min=[0.25, -0.5, 0.1], max=[0.9, 0.5, 0.7]).copy()
+
 plt.plot(traj[:, 0], traj[:, 1])
-plt.text(traj[0,0], traj[0,1], "Start")
-plt.text(traj[-1,0], traj[-1,1], "Goal")
-plt.xlim(0, 1)
-plt.ylim(-0.6, 0.6)
 plt.show()
+# # moveit.reach_cartesian_pose
+if success:
+    rospy.loginfo("Reaching Cartesian Pose...")
 
-
-# success = tc.example_cartesian_waypoint_action(traj)
-for tp in init_traj:
-    # for i in range(20):
-    #     e_image, emotion, engagement = emo.predict_emotions()
-    #     cv2.imshow('Emotion Detection', e_image)
-    #     if args.record:
-    #         cv2.imwrite(f"{path}/image_{image_i}.png", e_image)
-    #         image_i += 1
-    #     cv2.waitKey(1)
-    # # emotion = ""
-        
-    # while emotion not in ["Neutral", "Happiness"]:
-    #     e_image, emotion, engagement = emo.predict_emotions()
-    #     print("inloop")
-    #     cv2.imshow("emotion", e_image)
-    #     if args.record:
-    #         cv2.imwrite(f"{path}/image_{image_i}.png", e_image)
-    #         image_i += 1
-    #     cv2.waitKey(1)
-    # for i in range(5):
-    #     arm_pos, image = poses.get_arm_points()
-    #     cv2.imshow("pose", image)
-    #     if args.record:
-    #         cv2.imwrite(f"{path}/pose_{image_i}.png", image)
-    #         image_i += 1
-    #     cv2.waitKey(1)
-    # # print(arm_pos)
-    # print("Dressing", emotion)
-    # if arm_pos[-1].sum() != 0.0:
-    #     traj[-1] = arm_pos[-1]
-        
-    print(tp)
-    # moveit.reach_cartesian_pose
+actual_pose = moveit.get_cartesian_pose()
+for tp in traj:
     if success:
-        rospy.loginfo("Reaching Cartesian Pose...")
-    
-    actual_pose = moveit.get_cartesian_pose()
-    for tp in traj:
-        if success:
-            actual_pose.position.x = tp[0]
-            actual_pose.position.y = tp[1]
-            actual_pose.position.z = tp[2]
-            actual_pose.orientation.x = 0
-            actual_pose.orientation.y = 1
-            actual_pose.orientation.z = 0
-            actual_pose.orientation.w = 0
-            
-            print(actual_pose)
-            success &= moveit.reach_cartesian_pose(pose=actual_pose, tolerance=0.01, constraints=None)
-            print(success)
-    
+        actual_pose.position.x = tp[0]
+        actual_pose.position.y = tp[1]
+        actual_pose.position.z = tp[2]
+        # actual_pose.orientation.x = 0
+        # actual_pose.orientation.y = 1
+        # actual_pose.orientation.z = 0
+        # actual_pose.orientation.w = 0
+        
+        print(actual_pose)
+        success &= moveit.reach_cartesian_pose(pose=actual_pose, tolerance=0.01, constraints=None)
+        print(success)
+
+# dmp.imitate_trajectory(np.linspace(arm_pos[0], arm_pos[1], 50))
+# traj1, _, _ = dmp.rollout()
+# # traj1 = np.linspace(arm_pos[0], arm_pos[1], 15)
+        
+# # # moveit.reach_cartesian_pose
+# # if success:
+# #     rospy.loginfo("Reaching Cartesian Pose...")
+
+# actual_pose = moveit.get_cartesian_pose()
+# for tp in traj1:
+#     if success:
+#         actual_pose.position.x = tp[0]
+#         actual_pose.position.y = tp[1]
+#         actual_pose.position.z = tp[2]
+#         # actual_pose.orientation.x = 0
+#         # actual_pose.orientation.y = 1
+#         # actual_pose.orientation.z = 0
+#         # actual_pose.orientation.w = 0
+        
+#         print(actual_pose)
+#         success &= moveit.reach_cartesian_pose(pose=actual_pose, tolerance=0.01, constraints=None)
+#         print(success)
+
+# dmp.imitate_trajectory(np.linspace(arm_pos[1], arm_pos[2], 50))
+# traj2, _, _ = dmp.rollout()
+# if success:
+#     rospy.loginfo("Reaching Cartesian Pose...")
+
+# actual_pose = moveit.get_cartesian_pose()
+# for tp in traj2:
+#     if success:
+#         actual_pose.position.x = tp[0]
+#         actual_pose.position.y = tp[1]
+#         actual_pose.position.z = tp[2]
+#         # actual_pose.orientation.x = 0
+#         # actual_pose.orientation.y = 1
+#         # actual_pose.orientation.z = 0
+#         # actual_pose.orientation.w = 0
+        
+#         print(actual_pose)
+#         success &= moveit.reach_cartesian_pose(pose=actual_pose, tolerance=0.01, constraints=None)
+#         print(success)

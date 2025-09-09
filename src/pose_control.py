@@ -21,6 +21,7 @@ class ExampleCartesianActionsWithNotifications:
     def __init__(self, send_home=False):
         self.i = 1
         try:
+            self.is_first = True
             rospy.init_node('example_cartesian_poses_with_notifications_python')
 
             self.HOME_ACTION_IDENTIFIER = 2
@@ -60,6 +61,12 @@ class ExampleCartesianActionsWithNotifications:
             activate_publishing_of_action_notification_full_name = '/' + self.robot_name + '/base/activate_publishing_of_action_topic'
             rospy.wait_for_service(activate_publishing_of_action_notification_full_name)
             self.activate_publishing_of_action_notification = rospy.ServiceProxy(activate_publishing_of_action_notification_full_name, OnNotificationActionTopic)
+
+            # Wait for service
+            service_name = '/my_gen3/base/play_joint_trajectory'
+            rospy.loginfo(f"Waiting for service {service_name}...")
+            rospy.wait_for_service(service_name)
+            self.play_joint_trajectory = rospy.ServiceProxy(service_name, PlayJointTrajectory)
         except:
             self.is_init_success = False
         else:
@@ -69,6 +76,7 @@ class ExampleCartesianActionsWithNotifications:
         self.last_action_notif_type = notif.action_event
 
     def wait_for_action_end_or_abort(self):
+        start = time.time()
         while not rospy.is_shutdown():
             if (self.last_action_notif_type == ActionEvent.ACTION_END):
                 rospy.loginfo("Received ACTION_END notification")
@@ -79,6 +87,8 @@ class ExampleCartesianActionsWithNotifications:
                 return False
             else:
                 time.sleep(0.01)
+                if (time.time() - start) > 10.0:
+                    return False
 
     def example_clear_faults(self):
         try:
@@ -148,6 +158,24 @@ class ExampleCartesianActionsWithNotifications:
         rospy.sleep(1.0)
 
         return True
+    def init_pose_controller(self):
+        # Prepare and send pose 1
+            # Prepare and send pose 1
+            self.my_cartesian_speed = CartesianSpeed()
+            self.my_cartesian_speed.translation = 0.1 # m/s
+            self.my_cartesian_speed.orientation = 15  # deg/s
+
+            self.my_constrained_pose = ConstrainedPose()
+            
+            self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
+
+
+            self.req = ExecuteActionRequest()
+            self.req.input.oneof_action_parameters.reach_pose.append(self.my_constrained_pose)
+            self.req.input.name = "pose1"
+            self.req.input.handle.action_type = ActionType.REACH_POSE
+            self.req.input.handle.identifier = 1001
+        
     def send_pose1(self):
         #*******************************************************************************
             # Prepare and send pose 1
@@ -156,6 +184,11 @@ class ExampleCartesianActionsWithNotifications:
             self.my_cartesian_speed.orientation = 15  # deg/s
 
             self.my_constrained_pose = ConstrainedPose()
+            # print(self.my_constrained_pose)
+            # req = JointAngles()
+            # print(req)
+            # exit()
+            # exit()
             self.my_constrained_pose.constraint.oneof_type.speed.append(self.my_cartesian_speed)
 # 0.3, -0.3, 0.505
             self.my_constrained_pose.target_pose.x = 0.3
@@ -181,8 +214,36 @@ class ExampleCartesianActionsWithNotifications:
             else:
                 rospy.loginfo("Waiting for pose 1 to finish...")
 
-            self.wait_for_action_end_or_abort()
+            return self.wait_for_action_end_or_abort()
 
+    def set_joint_angles(self, joint_angles_deg):
+        # Create joint angles
+        joint_angles = JointAngles()
+        
+        # Add each joint angle
+        for i, angle_deg in enumerate(joint_angles_deg):
+            joint_angle = JointAngle()
+            joint_angle.joint_identifier = i
+            joint_angle.value = angle_deg  # Kinova uses degrees
+            joint_angles.joint_angles.append(joint_angle)
+        
+        # Create constrained joint angles
+        constrained_joint_angles = ConstrainedJointAngles()
+        constrained_joint_angles.joint_angles = joint_angles
+        
+        # Create and send request
+        req = PlayJointTrajectoryRequest()
+        req.input = constrained_joint_angles
+        
+        try:
+            rospy.loginfo(f"Sending joint angles: {joint_angles_deg}")
+            result = self.play_joint_trajectory(req)
+            rospy.loginfo("Joint trajectory sent successfully")
+            return True
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Failed to send joint trajectory: {e}")
+            return False
+    
     def set_angle(self, x, y, z):
         self.req.input.handle.identifier = 1001 + self.i
         self.i += 1
@@ -228,7 +289,7 @@ class ExampleCartesianActionsWithNotifications:
         else:
             rospy.loginfo(f"Waiting for pose {self.i} to finish...")
 
-        self.wait_for_action_end_or_abort()
+        return self.wait_for_action_end_or_abort()
 
     
     def main(self):
@@ -248,7 +309,7 @@ class ExampleCartesianActionsWithNotifications:
             
             #*******************************************************************************
             # Start the example from the Home position
-            success &= self.example_home_the_robot()
+            # success &= self.example_home_the_robot()
             #*******************************************************************************
 
             #*******************************************************************************
@@ -258,21 +319,9 @@ class ExampleCartesianActionsWithNotifications:
             #*******************************************************************************
             # Subscribe to ActionNotification's from the robot to know when a cartesian pose is finished
             success &= self.example_subscribe_to_a_robot_notification()
-
-            self.send_pose1()
-        #     self.set_pose(0.374, -0.081, 0.450)
-        #     self.set_pose(0.474, -0.081, 0.450)
-
-
-        #     success &= self.all_notifs_succeeded
-
-        #     success &= self.all_notifs_succeeded
-
-        # # For testing purposes
-        # rospy.set_param("/kortex_examples_test_results/cartesian_poses_with_notifications_python", success)
-
-        # if not success:
-        #     rospy.logerr("The example encountered an error.")
+            success &= self.set_joint_angles([90, 48.0, 332.67, 54.43, 21.92, 84.78, 52])
+            self.init_pose_controller()
+            return success
 
 if __name__ == "__main__":
     ex = ExampleCartesianActionsWithNotifications()

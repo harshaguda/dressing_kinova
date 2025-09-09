@@ -460,8 +460,12 @@ class DMPDG(object):
 # DMPDG(pattern="discrete", dmp_type="delayed", T=1.0, dt=0.01, tau_y=.60, tau=1.0)._DMPDG__test()  # Run the test method to visualize the DMPDG system's behavior.
 
 def make_arm_trajectory(points):
-    traj0 = np.vstack([np.linspace(points[0], points[1], 50),
-         np.linspace(points[1], points[2], 50)])
+    lins = []
+    for i in range(points.shape[0] - 1):
+        lins.append(np.linspace(points[i], points[i+1], 50))
+    traj0 = np.vstack(lins)
+    # traj0 = np.vstack([np.linspace(points[0], points[1], 50),
+    #      np.linspace(points[1], points[2], 50)])
     new_traj0 = np.empty_like(traj0)
     x = np.linspace(0, 1, traj0.shape[0])
     for i in range(3):
