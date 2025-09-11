@@ -12,10 +12,33 @@ import cv2
 import time
 import math
 import numpy as np
+import rospy
 
+import tf2_ros
+import tf2_geometry_msgs
+from sensor_msgs.msg import Image as msg_Image
+from sensor_msgs.msg import CameraInfo
+from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import Pose, PoseArray, PointStamped
+
+
+from simple_realsense_ros import SimpleRealSenseROS
+from projection_rs import ImageListener
 
 class MediaPipe3DPose:
     def __init__(self, debug=False, translate=False):
+        
+        self.pose_publisher = rospy.Publisher('/pose_arm', PoseArray, queue_size=10)
+                    
+    
+        # self.real_sense = SimpleRealSenseROS("external_camera")
+        self.real_sense = ImageListener(
+            depth_image_topic="/external_camera/aligned_depth_to_color/image_raw",
+            depth_info_topic="/external_camera/aligned_depth_to_color/camera_info",
+            color_image_topic="/external_camera/color/image_raw",
+            color_info_topic="/external_camera/color/camera_info"
+        )
+        
         self.debug = debug
         self.translate = translate
         self.no_smooth_landmarks = False
@@ -35,29 +58,22 @@ class MediaPipe3DPose:
             min_detection_confidence=self.min_detection_confidence,
             min_tracking_confidence=self.min_tracking_confidence
             )
-        # Create a context object. This object owns the handles to all connected realsense devices
-        self.pipeline = rs.pipeline()
-        config = rs.config()
+        
+        # Get RealSense equivalent values from ROS
+        self.depth_scale = 0.001  # 0.001 (1mm = 0.001m)
+        self.depth_min = 0.11      # 0.11 meter
+        self.depth_max = 1.0       # 1.0 meter
 
-        # Enable streams
-        config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-        config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-        self.colorizer = rs.colorizer()
+        # Wait for camera info to be available
+        rospy.loginfo("Waiting for camera info...")
+        
+        # Get intrinsics from ROS camera info
+        self.color_intrin = self.real_sense.color_intrinsics
+        # self.depth_intrin = self.real_sense.intrinsics
 
-        # Start streaming
-        profile = self.pipeline.start(config)
-        # There values are needed to calculate the mapping
-        self.depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
-        self.depth_min = 0.11 #meter
-        self.depth_max = 1.0 #meter
-
-        self.depth_intrin = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
-        self.color_intrin = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-
-        self.depth_to_color_extrin =  profile.get_stream(rs.stream.depth).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.color))
-        self.color_to_depth_extrin =  profile.get_stream(rs.stream.color).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.depth))
-
-                        
+        # For ROS, we don't need extrinsics if using aligned depth
+        self.depth_to_color_extrin = None  # Not needed for aligned depth
+        self.color_to_depth_extrin = None  # Not needed for aligned depth
 
         self.previous_valid_pose = [[0,0,0], [0,0,0], [0,0,0]]
         self.aruco_x, self.aruco_y = None, None
@@ -87,8 +103,7 @@ class MediaPipe3DPose:
 
 
     # def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, dx, dy, x, y, translate=False):
-    def get_3d_point_from_pixel(self, idx, depth_frame, color_frame, dx, dy, x, y, translate=False):
-    
+    def get_3d_point_from_pixel(self, idx, x, y, translate=False):
         """
         Convert a 2D pixel coordinate (x,y) to a 3D point using the RealSense camera
         
@@ -100,51 +115,46 @@ class MediaPipe3DPose:
             tuple: (x, y, z) coordinates in meters in camera coordinate system
                 or None if the depth value at the pixel is invalid
         """
-        # x, y, dx, dy = 85, 369, 186, 314
-        # 53.3 -31.6  31.6
-        if not depth_frame or not color_frame:
-            return None
+        # if not depth_frame or not color_frame:
+        #     return None
         
-        # Get depth value at the pixel (in meters)
+        # Get depth value at the pixel using ROS interface
         try:
-            depth_value = depth_frame.get_distance(dx, dy)
+            depth_value, du, dv = self.real_sense.get_depth_at_color_pixel(x, y)
         except RuntimeError as e:
             depth_value = 0
             print(f"Error getting depth value at pixel ({x}, {y}): {e}")
-        if depth_value <= 0:
+        
+        if depth_value is None or depth_value <= 0:
             print(f"Invalid depth at pixel ({x}, {y})")
-        # Convert pixel to 3D point in camera coordinate system
-        depth_intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
-        intrinsics = rs.intrinsics()
-        point_3d = rs.rs2_deproject_pixel_to_point(depth_intrinsics, [x, y], depth_value)
+            return np.array([0, 0, 0]), None, None
+        
+        # Convert pixel to 3D point using ROS camera intrinsics
+        point_3d = self.real_sense.get_3d_point_from_color_pixel(x, y)
+        
+        if point_3d is None:
+            return self.previous_valid_pose[idx]
+            
         if translate:
             point_3d = self.t_camera_to_aruco(point_3d)
+        
         self.previous_valid_pose[idx] = point_3d
-        # print(depth_value, x, y, dx, dy)
-        return point_3d
+        return point_3d, du, dv
 
 
     def get_arm_points(self):
+        # Get images from ROS instead of direct pipeline
+        color_image, depth_image = self.real_sense.get_images()
+        if color_image is None or depth_image is None:
+            return None, None
 
-        # Create a pipeline object. This object configures the streaming camera and owns it's handle
-        frames = self.pipeline.wait_for_frames()
-        # Create alignment primitive with color as its target stream:
-        # It is a computationally expensive operation, maybe in future just project 
-        # the required pixel to the depth frame and get x,y,z values.
-        # align = rs.align(rs.stream.color)
-        # frames = align.process(frames)
-        depth_frame = frames.get_depth_frame()
-        color_frame = frames.get_color_frame()
-        if not depth_frame: return None, None
-
-        # image = np.array(color_frame.get_data())
-        image = np.asanyarray(color_frame.get_data())
-
-        depth_colormap = np.asanyarray(self.colorizer.colorize(depth_frame).get_data())
+        # Use the ROS images directly
+        image = color_image.copy()
+        depth_colormap = depth_image.copy()
 
         # Flip the image horizontally for a later selfie-view display, and convert
         # the BGR image to RGB.
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         h, w, _ = image.shape
         # To improve performance, optionally mark the image as not writeable to
         # pass by reference.
@@ -152,15 +162,12 @@ class MediaPipe3DPose:
         results = self.pose.process(image)
         shoulder_verts = []
         required_landmarks = [
-            # mp_pose.PoseLandmark.LEFT_SHOULDER,
-            # mp_pose.PoseLandmark.LEFT_ELBOW,
-            # self.mp_pose.PoseLandmark.LEFT_WRIST,
-            # self.mp_pose.PoseLandmark.LEFT_WRIST,
-            # self.mp_pose.PoseLandmark.LEFT_ELBOW,
-            # self.mp_pose.PoseLandmark.LEFT_SHOULDER,
-            self.mp_pose.PoseLandmark.RIGHT_WRIST,
-            self.mp_pose.PoseLandmark.RIGHT_ELBOW,
-            self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
+            self.mp_pose.PoseLandmark.LEFT_WRIST,
+            self.mp_pose.PoseLandmark.LEFT_ELBOW,
+            self.mp_pose.PoseLandmark.LEFT_SHOULDER,
+            # self.mp_pose.PoseLandmark.RIGHT_WRIST,
+            # self.mp_pose.PoseLandmark.RIGHT_ELBOW,
+            # self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
         ]
         if results.pose_landmarks is not None:
             for landmark in required_landmarks:
@@ -171,62 +178,51 @@ class MediaPipe3DPose:
         shoulder_3d = []
         for i, vert in enumerate(shoulder_verts):
             x_px, y_px = vert
-            print(depth_frame.get_data())
-            dx, dy = rs.rs2_project_color_pixel_to_depth_pixel(
-            depth_frame.get_data(),
-            self.depth_scale,
-            self.depth_min,
-            self.depth_max,
-            self.depth_intrin,
-            self.color_intrin,
-            self.depth_to_color_extrin,
-            self.color_to_depth_extrin,
-            list([float(x_px), float(y_px)])
-        )
-            shoulder_3d.append(self.get_3d_point_from_pixel(i, depth_frame, color_frame, int(dx), int(dy), x_px, y_px, self.translate))
-            # print(self.get_3d_point_from_pixel(i, depth_frame, color_frame, int(dx), int(dy), x_px, y_px, self.translate)*100)
+            point_3d, du, dv = self.get_3d_point_from_pixel(i, x_px, y_px, self.translate)
+            shoulder_3d.append(point_3d)
+            
         if self.debug:
             image.flags.writeable = True
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            # image = cv2.circle(image, center=(320, 240), radius=5, color=(255, 0, 0), thickness=-1)
-            # wrist = shoulder_verts[0]
-            # elbow = shoulder_verts[1]
-            
-            # v_n = np.array(elbow) - np.array(wrist)
-            # v_n = v_n / np.linalg.norm(v_n)
-            # ext_wrist = -v_n * 50 + np.array(wrist)
-            # ext_wrist = ext_wrist.astype(int)
-            # image = cv2.circle(image, center=(ext_wrist[0], ext_wrist[1]), radius=5, color=(0, 255, 255), thickness=-1)
+            # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
             for i, vert in enumerate(shoulder_verts):
                 x_px, y_px = vert
                 # Draw a circle at the landmark position
                 image = cv2.circle(image, center=(x_px, y_px), radius=5, color=(0, 0, 255), thickness=-1)
-                depth_colormap = cv2.circle(depth_colormap, center=(int(dx), int(dy)), radius=5, color=(0, 255, 0), thickness=-1)
+                # Create depth colormap for visualization
+                depth_display = cv2.convertScaleAbs(depth_image, alpha=0.03)
+                depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
+                if du is not None and dv is not None:
+                    depth_colormap = cv2.circle(depth_colormap, center=(int(du), int(dv)), radius=5, color=(0, 255, 0), thickness=-1)
                 if i != 0:
                     x_px1, y_px1 = shoulder_verts[i-1]
                     image = cv2.line(image, (x_px, y_px), (x_px1, y_px1), (0, 255, 0), 2)
-            #     # put x, y, z position on the image
-            #     if shoulder_3d[i] is not None:
-                
-            #         position_text = f"({shoulder_3d[i][0]:.2f}, {shoulder_3d[i][1]:.2f}, {shoulder_3d[i][2]:.2f})"
-            #         cv2.putText(image, position_text, (x_px, y_px), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1, cv2.LINE_AA)
-
-            # print(results.pose_landmarks)
-            # exit()
-            # self.mp_drawing.draw_landmarks(
-            #         image, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
-            
+                    
             cv2.imshow('RealSense Pose Detector', image)
             cv2.imshow('RealSense Depth', depth_colormap)
 
             if cv2.waitKey(1) & 0xFF == 27:
                 exit()
         if len(shoulder_3d) == 0:
-            # return np.array(self.previous_valid_pose), image
             return np.zeros((3,3)), image
+        
+        self.publish_poses(shoulder_3d)
         return np.array(shoulder_3d), image
 
+    def publish_poses(self, traj):
+        pa = PoseArray()
+        for tp in traj:
+            p = Pose()
+            if np.sum(tp) == 0:
+                continue
+            p.position.x = tp[0]
+            p.position.y = tp[1]
+            p.position.z = tp[2]
+            pa.poses.append(p)
+            
+        pa.header.frame_id = "base_link"
+        self.pose_publisher.publish(pa)    
+    
     def t_camera_to_aruco(self, point):
         """
         Transform a point from camera coordinates to ArUco marker coordinates.
@@ -239,9 +235,14 @@ class MediaPipe3DPose:
         point: Transformed 3D point in ArUco marker coordinates
         """
         T_new = np.eye(4)
-        T_new[:-1, 3] = [0.672 , 0.0, 0.434]  # Translation vector
+        T_new[:-1, 3] = [0.2 , 0.15, 0.05]  # Translation vector
+        # self.transform_matrix[2, 3] -= 0.2  # Adjust the translation along the z-axis
+        # self.transform_matrix[1, 3] -= 0.15  # Adjust the translation along the y-axis
+        # self.transform_matrix[0, 3] -= 0.05  # Adjust the translation along the x-axis
         point = np.array([point[0], point[1], point[2], 1])
+        # point = (self.translation_matrix @ T_new) @ point
         point = self.translation_matrix @ point
+        # print(self.translation_matrix, T_new, self.translation_matrix @ T_new)
         # print("After translation", point)
         # point = T_new @ point
         # point = point[:3] / point[3]
@@ -249,8 +250,11 @@ class MediaPipe3DPose:
 
 
 if __name__ == "__main__":
-    poses = MediaPipe3DPose(debug=True, translate=True)
+    rospy.init_node('pose_estimation_node', anonymous=True)
     
-    while True:
+    poses = MediaPipe3DPose(debug=True, translate=True)
+    rate = rospy.Rate(10)  # 10 Hz
+    while not rospy.is_shutdown():
         points, _ = poses.get_arm_points()
-        print(points[0]*100)
+        # print(points)
+        rate.sleep()

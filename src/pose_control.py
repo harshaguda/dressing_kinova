@@ -22,7 +22,7 @@ class ExampleCartesianActionsWithNotifications:
         self.i = 1
         try:
             self.is_first = True
-            rospy.init_node('example_cartesian_poses_with_notifications_python')
+            # rospy.init_node('example_cartesian_poses_with_notifications_python')
 
             self.HOME_ACTION_IDENTIFIER = 2
 

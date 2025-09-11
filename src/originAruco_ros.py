@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import argparse
 import pyrealsense2 as rs
-
+from projection_rs import ImageListener
 # Define available ArUco dictionaries
 ARUCO_DICT = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
@@ -31,19 +31,21 @@ ARUCO_DICT = {
 def detect_aruco_markers(
         frame, 
         aruco_dict_type,
-        matrix_coefficients=None,
-        distortion_coefficients=None,
-        depth_frame=None,
-        color_frame=None,
-        depth_colormap=None,
+        realsense: ImageListener,
+        
+        # matrix_coefficients=None,
+        # distortion_coefficients=None,
+        # depth_frame=None,
+        # color_frame=None,
+        # depth_colormap=None,
         idx_marker=0,
-        depth_scale=None,
-        depth_min=None,
-        depth_max=None,
-        depth_intrin=None,
-        color_intrin=None,
-        depth_to_color_extrin=None,
-        color_to_depth_extrin=None,
+        # depth_scale=None,
+        # depth_min=None,
+        # depth_max=None,
+        # depth_intrin=None,
+        # color_intrin=None,
+        # depth_to_color_extrin=None,
+        # color_to_depth_extrin=None,
         
         ):
     """
@@ -68,23 +70,12 @@ def detect_aruco_markers(
     detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
     corners, ids, rejected = detector.detectMarkers(gray)
     rvec, tvec, vert = None, None, None
+    matrix_coefficients = realsense.color_intrinsics
     # Draw detected markers if any
     if ids is not None and len(ids) > 0:
         # rvec, tvec, _ = cv2.aruco.(corners, 0.05, matrix_coefficients, distortion_coefficients)
         x_px, y_px = int(corners[idx_marker].mean(axis=1)[0, 0]), int(corners[idx_marker].mean(axis=1)[0, 1])
-        dx, dy = rs.rs2_project_color_pixel_to_depth_pixel(
-            depth_frame.get_data(),
-            depth_scale,
-            depth_min,
-            depth_max,
-            depth_intrin,
-            color_intrin,
-            depth_to_color_extrin,
-            color_to_depth_extrin,
-            list([float(x_px), float(y_px)])
-        )
-        vert, depth_value = get_3d_point_from_pixel(depth_frame, color_frame, int(dx), int(dy), x_px, y_px)
-        print(matrix_coefficients, distortion_coefficients)
+        vert = realsense.get_3d_point_from_color_pixel(x_px, y_px)
         # If camera calibration is provided, estimate pose
         if matrix_coefficients is not None and distortion_coefficients is not None:
             # Define marker size (in meters)
@@ -125,10 +116,10 @@ def detect_aruco_markers(
         frame = cv2.circle(frame, center=(x_px, y_px), radius=5, color=(0, 255, 0), thickness=-1)
         # depth_3d = depth_frame.get_distance(int(dx), int(dy))
         # print(dx, dy, depth_value, depth_3d)
-        depth_colormap = cv2.circle(depth_colormap, center=(int(dx), int(dy)), radius=5, color=(0, 255, 0), thickness=-1)
+        # depth_colormap = cv2.circle(depth_colormap, center=(int(dx), int(dy)), radius=5, color=(0, 255, 0), thickness=-1)
         cv2.aruco.drawDetectedMarkers(frame, corners, ids)
     
-    return frame, rvec, vert, depth_colormap
+    return frame, rvec, vert#, depth_colormap
 
 def get_3d_point_from_pixel(depth_frame, color_frame, dx, dy, x, y):
         """
@@ -241,14 +232,16 @@ def main():
     # Initialize the camera
     if args.use_realsense:
         try:
-            import pyrealsense2 as rs
-            pipeline = rs.pipeline()
-            config = rs.config()
-            config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-            config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-            colorizer = rs.colorizer()
-            profile = pipeline.start(config)
-
+            import pyrealsense2 as rs2
+            from projection_rs import ImageListener
+            real_sense = ImageListener(
+            depth_image_topic="/external_camera/aligned_depth_to_color/image_raw",
+            depth_info_topic="/external_camera/aligned_depth_to_color/camera_info",
+            color_image_topic="/external_camera/color/image_raw",
+            color_info_topic="/external_camera/color/camera_info"
+            )
+        
+            
             
             print("RealSense camera initialized")
         except ImportError:
@@ -266,36 +259,10 @@ def main():
     while True:
         # Get frame from camera
         if args.use_realsense:
-            frames = pipeline.wait_for_frames()
-            color_frame = frames.get_color_frame()
-            depth_frame = frames.get_depth_frame()
-            # Extract intrinsics from the color stream
-            intrinsics = color_frame.profile.as_video_stream_profile().intrinsics
-            
-            # There values are needed to calculate the mapping
-            depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
-            depth_min = 0.11 #meter
-            depth_max = 1.0 #meter
-
-            depth_intrin = profile.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
-            color_intrin = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-
-            depth_to_color_extrin =  profile.get_stream(rs.stream.depth).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.color))
-            color_to_depth_extrin =  profile.get_stream(rs.stream.color).as_video_stream_profile().get_extrinsics_to( profile.get_stream(rs.stream.depth))
-
-            # Create camera matrix
-            camera_matrix = np.array([
-                [intrinsics.fx, 0, intrinsics.ppx],
-                [0, intrinsics.fy, intrinsics.ppy],
-                [0, 0, 1]
-            ])
-            
-            # Get distortion coefficients
-            dist_coeffs = np.array(intrinsics.coeffs)
-            if not color_frame:
+            color_frame, depth_frame = real_sense.get_frames()
+            if not color_frame or not depth_frame:
                 continue
-            frame = np.asanyarray(color_frame.get_data())
-            depth_colormap = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+            
         else:
             ret, frame = cap.read()
             if not ret:
